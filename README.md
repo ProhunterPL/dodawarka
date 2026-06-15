@@ -57,7 +57,14 @@ Przycisk „Wczytaj produkt testowy” wypełnia dane koszulki EARN YOUR REPS (S
 
 Linki OneDrive nie są bezpośrednimi URL-ami obrazów — Apilo ich nie pobierze. Aplikacja wspiera **upload na AWS S3**:
 
-1. Utwórz bucket S3 z publicznym odczytem obiektów pod ścieżką `incore-products/*` (bucket policy lub CloudFront).
+1. Utwórz bucket i politykę jednym poleceniem (używa `.env.local`):
+
+```bash
+npm run s3:setup
+```
+
+Skrypt tworzy bucket (jeśli nie istnieje), ustawia publiczny odczyt tylko dla `incore-products/*` i zostawia zapis przez IAM usera.
+
 2. Uzupełnij w `.env.local`:
 
 ```env
@@ -70,6 +77,8 @@ AWS_S3_PUBLIC_BASE_URL=https://cdn.twojadomena.pl
 ```
 
 3. W formularzu produktu użyj **„Wybierz pliki”** — zdjęcia trafią na S3, a publiczny URL zostanie dodany do payloadu Apilo.
+
+Test po konfiguracji: `node scripts/test-s3-upload.mjs` (opcjonalnie).
 
 ## Uwagi
 

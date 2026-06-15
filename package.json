@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "apilo:auth": "node scripts/apilo-auth.mjs"
+    "apilo:auth": "node scripts/apilo-auth.mjs",
+    "s3:setup": "node scripts/setup-s3-bucket.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1068.0",
