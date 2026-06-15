@@ -47,13 +47,25 @@ async function requestToken(
 export async function authenticate(): Promise<ApiloTokenResponse> {
   const stored = await readStoredTokens();
   if (stored?.refreshToken) {
-    return refreshToken(stored.refreshToken);
+    try {
+      return await refreshToken(stored.refreshToken);
+    } catch {
+      // fall through to authorization_code
+    }
   }
 
   const config = getApiloConfig();
+  if (config.refreshToken) {
+    try {
+      return await refreshToken(config.refreshToken);
+    } catch {
+      // fall through
+    }
+  }
+
   if (!config.authorizationCode) {
     throw new Error(
-      "Brak APILO_AUTHORIZATION_CODE — wygeneruj kod w panelu Apilo (Administracja → Klucze API).",
+      "Brak ważnego tokenu. Uruchom: npm run apilo:auth (wymaga świeżego APILO_AUTHORIZATION_CODE w .env.local).",
     );
   }
 
