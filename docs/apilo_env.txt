@@ -1,0 +1,4 @@
+APILO_HOST=https://incoresports.apilo.com
+CLIENT_ID=1
+CLIENT_SECRET=29dd4cb4-f65a-5a65-81ad-01c72221eb8d
+AUTHORIZATION_CODE=77c9eaf3-d14d-5db3-8b74-9307aec3d064
