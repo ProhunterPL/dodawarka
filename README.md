@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dodawarka do Apilo — Incore Sports
 
-## Getting Started
+Aplikacja webowa do dodawania produktów do [Apilo](https://apilo.com/pl/) jako centralnego katalogu produktowego Incore Sports. Umożliwia uzupełnienie danych produktu (w tym wariantów rozmiarów), podgląd payloadu REST API, tryb dry-run oraz wysyłkę do magazynu Apilo.
 
-First, run the development server:
+## Co to jest Apilo?
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Apilo to platforma e-commerce w chmurze do wielokanałowej sprzedaży. Obsługuje m.in. Shoper, Allegro i Amazon. REST API pozwala m.in. na zarządzanie produktami, stanami magazynowymi i zamówieniami. Dokumentacja: https://developer.apilo.com/api/
+
+## Wymagania
+
+- Node.js 20+
+- Konto Apilo z kluczem REST API (Administracja → Klucze API Apilo → Nowa aplikacja REST API)
+
+## Konfiguracja
+
+1. Skopiuj `.env.example` do `.env.local`
+2. Uzupełnij zmienne:
+
+```env
+APILO_HOST=https://twoja-instancja.apilo.com
+APILO_CLIENT_ID=...
+APILO_CLIENT_SECRET=...
+APILO_AUTHORIZATION_CODE=...
+APILO_DRY_RUN=true
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Po pierwszej autoryzacji refresh token jest zapisywany lokalnie w `data/apilo-tokens.json` (plik jest ignorowany przez git).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Uruchomienie
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+Aplikacja: http://localhost:3000
 
-To learn more about Next.js, take a look at the following resources:
+## Ścieżka MVP
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Dashboard** — status połączenia z Apilo, ostatnio dodane produkty
+2. **Dodaj produkt** — formularz z produktem testowym „Earn Your Reps”
+3. **Podgląd payloadu** — JSON wysyłany do `POST /rest/api/warehouse/product/`
+4. **Dry-run / import** — wysyłka lub symulacja bez zapisu w Apilo
+5. **Wynik** — ID produktu i kolejne kroki synchronizacji kanałów w panelu Apilo
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Bezpieczeństwo
 
-## Deploy on Vercel
+- Credentiale tylko w `.env.local` (nigdy w frontendzie)
+- Tokeny nie są logowane w konsoli
+- `.env*` i `data/` są w `.gitignore`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Produkt testowy
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Przycisk „Wczytaj produkt testowy” wypełnia dane koszulki EARN YOUR REPS (SKU `TMCS-EYR-IS-S`, warianty XS–3XL). Szczegóły w `docs/apilo.txt` i `docs/plan.md`.
+
+## Uwagi
+
+- Linki OneDrive/1drv.ms mogą nie działać jako bezpośrednie URL-e zdjęć — użyj publicznych linków do obrazów przed importem.
+- Automatyczna publikacja na marketplace’ach nie jest w MVP — po imporcie zsynchronizuj kanały w panelu Apilo.
