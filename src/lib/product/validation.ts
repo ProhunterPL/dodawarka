@@ -1,4 +1,5 @@
 import type { ApiloWarehouseProductPayload } from "@/lib/apilo/types";
+import { isS3Configured } from "@/lib/storage/s3-config";
 import type { ProductFormInput, ProductStatus, ValidationIssue, ValidationResult } from "./types";
 
 const ONEDRIVE_PATTERNS = [/1drv\.ms/i, /onedrive\.live\.com/i, /sharepoint\.com/i];
@@ -56,8 +57,10 @@ export function validateProductInput(input: ProductFormInput): ValidationResult 
     if (isOneDriveUrl(url)) {
       issues.push({
         field: "imageUrls",
-        message: `Link OneDrive może nie być bezpośrednim URL-em obrazu: ${url}`,
-        severity: "warning",
+        message: isS3Configured()
+          ? `Link OneDrive nie zadziała w Apilo — wgraj zdjęcie przez upload S3: ${url}`
+          : `Link OneDrive może nie być bezpośrednim URL-em obrazu: ${url}`,
+        severity: isS3Configured() ? "error" : "warning",
       });
     }
   }

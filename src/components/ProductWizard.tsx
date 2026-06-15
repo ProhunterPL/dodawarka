@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AiSuggestionsPanel } from "@/components/AiSuggestionsPanel";
 import { ChannelChecklist } from "@/components/ChannelChecklist";
 import { CategoryPicker } from "@/components/CategoryPicker";
+import { ImageUploader } from "@/components/ImageUploader";
 import { applyAiSuggestions } from "@/lib/ai/apply-suggestions";
 import type { AiProductSuggestions } from "@/lib/ai/types";
 import { APILO_NEXT_STEPS } from "@/lib/product/channels";
@@ -434,28 +435,16 @@ export function ProductWizard() {
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-medium">Zdjęcia (URL)</h2>
-        <div className="mt-4 space-y-3">
-          {product.imageUrls.map((url, index) => (
-            <input
-              key={`image-${index}`}
-              className={inputClassName}
-              value={url}
-              onChange={(e) => {
-                const next = [...product.imageUrls];
-                next[index] = e.target.value;
-                updateField("imageUrls", next);
-              }}
-              placeholder="https://..."
-            />
-          ))}
-          <button
-            type="button"
-            onClick={() => updateField("imageUrls", [...product.imageUrls, ""])}
-            className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
-          >
-            Dodaj URL zdjęcia
-          </button>
+        <h2 className="text-lg font-medium">Zdjęcia produktu</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Zalecany sposób: upload na S3 (publiczny URL dla Apilo). Linki OneDrive nie działają
+          jako bezpośrednie obrazy.
+        </p>
+        <div className="mt-4">
+          <ImageUploader
+            urls={product.imageUrls}
+            onChange={(urls) => updateField("imageUrls", urls)}
+          />
         </div>
       </section>
 

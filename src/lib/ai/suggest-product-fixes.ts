@@ -15,7 +15,7 @@ Zasady:
 - Dla categoryIds wybierz najlepsze dopasowanie z podanej listy kategorii Apilo (jako tablica liczb).
 - Jeśli brakuje kategorii, ustaw categoryIds i categoryLabel.
 - Nie proponuj zmian pól, które są już poprawne.
-- imageUrls: ostrzeż jeśli to linki OneDrive — nie zamieniaj ich na zmyślone URL-e, tylko zostaw uwagę w reason.
+- imageUrls: jeśli to linki OneDrive, zaproponuj wgranie przez S3 w aplikacji (nie podawaj fałszywych URL-i).
 
 Schemat odpowiedzi:
 {

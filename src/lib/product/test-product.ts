@@ -25,11 +25,7 @@ Cechy produktu:
     "Koszulka INCORE SPORTS Earn Your Reps — bawełniana, sportowy krój, idealna na trening i na co dzień.",
   categoryIds: [],
   categoryLabel: "Odzież / Dla niego / T-shirt",
-  imageUrls: [
-    "https://1drv.ms/i/c/8a1a4240d1db3aab/IQAf4s6OvWadRo3csDQ8lddAAVnN9rDsGcQjXNoC8h3JXwI?e=GUCLYa",
-    "https://1drv.ms/i/c/8a1a4240d1db3aab/IQDJv-SZGnOST5LvltX0g-7fAQzSX0c5lhg7-WB74UKRl5Q?e=EQ5ykW",
-    "https://1drv.ms/i/c/8a1a4240d1db3aab/IQDblc837AiKQ6cw220ql0ltAcD3Dkm7IkNfxy2wPsu37zc?e=8hFSyy",
-  ],
+  imageUrls: [],
   status: "draft",
   variants: [
     { size: "XS", sku: "TMCS-EYR-IS-XS", quantity: 10 },

@@ -10,6 +10,7 @@
     "apilo:auth": "node scripts/apilo-auth.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1068.0",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4"
