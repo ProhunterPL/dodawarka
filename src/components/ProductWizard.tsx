@@ -2,8 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { AiSuggestionsPanel } from "@/components/AiSuggestionsPanel";
 import { ChannelChecklist } from "@/components/ChannelChecklist";
 import { CategoryPicker } from "@/components/CategoryPicker";
+import { applyAiSuggestions } from "@/lib/ai/apply-suggestions";
+import type { AiProductSuggestions } from "@/lib/ai/types";
 import { APILO_NEXT_STEPS } from "@/lib/product/channels";
 import { TEST_PRODUCT } from "@/lib/product/test-product";
 import type { ProductFormInput, ProductVariantInput, ValidationIssue } from "@/lib/product/types";
@@ -19,6 +22,8 @@ interface ImportResult {
   channelNote?: string;
   message?: string;
   validation?: { issues: ValidationIssue[] };
+  aiSuggestions?: AiProductSuggestions | null;
+  details?: unknown;
 }
 
 const inputClassName =
@@ -30,9 +35,55 @@ export function ProductWizard() {
   const [dryRun, setDryRun] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<AiProductSuggestions | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const validation = useMemo(() => validateProductInput(product), [product]);
   const previewPayload = useMemo(() => buildApiloPayload(product), [product]);
+  const hasValidationIssues = validation.issues.length > 0;
+
+  async function requestAiFixes(context?: {
+    apiloError?: { message: string; status?: number; details?: unknown };
+  }) {
+    setAiLoading(true);
+    try {
+      const response = await fetch("/api/ai/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product,
+          validationIssues: validation.issues,
+          apiloError: context?.apiloError,
+        }),
+      });
+      const data = (await response.json()) as {
+        suggestions?: AiProductSuggestions | null;
+        message?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.message ?? "Nie udało się uzyskać sugestii AI.");
+      }
+      setAiSuggestions(data.suggestions ?? null);
+    } catch (error) {
+      setAiSuggestions({
+        summary:
+          error instanceof Error ? error.message : "Błąd asystenta AI.",
+        suggestions: [],
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function applyAiFixes() {
+    if (!aiSuggestions?.suggestions.length) {
+      return;
+    }
+    setProduct((current) => applyAiSuggestions(current, aiSuggestions.suggestions));
+    setAiSuggestions(null);
+    setStep("form");
+    setResult(null);
+  }
 
   function updateField<K extends keyof ProductFormInput>(
     key: K,
@@ -61,6 +112,16 @@ export function ProductWizard() {
       });
       const data = (await response.json()) as ImportResult;
       setResult(data);
+      if (data.aiSuggestions) {
+        setAiSuggestions(data.aiSuggestions);
+      } else if (!data.success) {
+        void requestAiFixes({
+          apiloError: {
+            message: data.message ?? "Import nieudany",
+            details: data.details,
+          },
+        });
+      }
       setStep("result");
     } catch (error) {
       setResult({
@@ -78,6 +139,14 @@ export function ProductWizard() {
     return (
       <div className="space-y-6">
         <ValidationPanel issues={validation.issues} />
+        {(hasValidationIssues || aiSuggestions) && (
+          <AiSuggestionsPanel
+            suggestions={aiSuggestions}
+            loading={aiLoading}
+            onRequest={() => void requestAiFixes()}
+            onApply={applyAiFixes}
+          />
+        )}
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="text-lg font-medium">Podgląd payloadu Apilo</h2>
           <pre className="mt-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-sm text-zinc-100">
@@ -141,6 +210,22 @@ export function ProductWizard() {
           </section>
         ) : null}
 
+        {!result.success ? (
+          <AiSuggestionsPanel
+            suggestions={aiSuggestions}
+            loading={aiLoading}
+            onRequest={() =>
+              void requestAiFixes({
+                apiloError: {
+                  message: result.message ?? "Import nieudany",
+                  details: result.details,
+                },
+              })
+            }
+            onApply={applyAiFixes}
+          />
+        ) : null}
+
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
           <h3 className="font-medium">Kolejne kroki w Apilo</h3>
           <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
@@ -193,6 +278,15 @@ export function ProductWizard() {
       </div>
 
       <ValidationPanel issues={validation.issues} />
+
+      {(hasValidationIssues || aiSuggestions) && (
+        <AiSuggestionsPanel
+          suggestions={aiSuggestions}
+          loading={aiLoading}
+          onRequest={() => void requestAiFixes()}
+          onApply={applyAiFixes}
+        />
+      )}
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="text-lg font-medium">Dane podstawowe</h2>

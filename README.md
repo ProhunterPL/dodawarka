@@ -57,3 +57,4 @@ Przycisk „Wczytaj produkt testowy” wypełnia dane koszulki EARN YOUR REPS (S
 
 - Linki OneDrive/1drv.ms mogą nie działać jako bezpośrednie URL-e zdjęć — użyj publicznych linków do obrazów przed importem.
 - Automatyczna publikacja na marketplace’ach nie jest w MVP — po imporcie zsynchronizuj kanały w panelu Apilo.
+- **Asystent AI (OpenAI):** przy błędach walidacji lub odpowiedzi Apilo aplikacja proponuje poprawki opisu, kategorii itd. Ustaw `OPENAI_API_KEY` w `.env.local`, potem użyj „Popraw z AI” w formularzu.

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { suggestProductFixes } from "@/lib/ai/suggest-product-fixes";
+import { isOpenAiConfigured } from "@/lib/ai/openai-client";
 import {
   createWarehouseProduct,
   isApiloApiError,
@@ -7,17 +9,52 @@ import { buildApiloPayload, validateProductInput } from "@/lib/product/validatio
 import type { ProductFormInput } from "@/lib/product/types";
 import { appendImportLog, saveLocalProduct } from "@/lib/storage/local-store";
 
+async function maybeSuggestFixes(
+  product: ProductFormInput,
+  options: {
+    validationIssues?: ReturnType<typeof validateProductInput>["issues"];
+    apiloError?: { message: string; status?: number; details?: unknown };
+  },
+) {
+  if (!isOpenAiConfigured()) {
+    return null;
+  }
+
+  try {
+    return await suggestProductFixes({
+      product,
+      validationIssues: options.validationIssues,
+      apiloError: options.apiloError,
+    });
+  } catch (error) {
+    console.error("AI suggest error:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
+  let productInput: ProductFormInput | null = null;
+
   try {
     const body = (await request.json()) as {
       product: ProductFormInput;
       dryRun?: boolean;
     };
+    productInput = body.product;
 
     const validation = validateProductInput(body.product);
     if (!validation.valid) {
+      const aiSuggestions = await maybeSuggestFixes(body.product, {
+        validationIssues: validation.issues,
+      });
+
       return NextResponse.json(
-        { success: false, validation },
+        {
+          success: false,
+          validation,
+          aiSuggestions,
+          message: "Walidacja nie powiodła się. Sprawdź sugestie AI.",
+        },
         { status: 422 },
       );
     }
@@ -90,6 +127,15 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Import do Apilo nie powiódł się.";
 
+    const apiloError = isApiloApiError(error)
+      ? { message, status: error.status, details: error.details }
+      : { message, status };
+
+    let aiSuggestions = null;
+    if (productInput) {
+      aiSuggestions = await maybeSuggestFixes(productInput, { apiloError });
+    }
+
     await appendImportLog({
       action: "import",
       sku: "unknown",
@@ -102,6 +148,7 @@ export async function POST(request: Request) {
         success: false,
         message,
         details: isApiloApiError(error) ? error.details : undefined,
+        aiSuggestions,
       },
       { status },
     );
