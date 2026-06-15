@@ -276,6 +276,11 @@ export function ProductWizard() {
           />
           Tryb dry-run (bez wysyłki do Apilo)
         </label>
+        {!dryRun ? (
+          <span className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+            Wysyłka do Apilo włączona
+          </span>
+        ) : null}
       </div>
 
       <ValidationPanel issues={validation.issues} />

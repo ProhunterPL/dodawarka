@@ -199,7 +199,10 @@ export async function createWarehouseProduct(
   products: ApiloWarehouseProductPayload[],
   options?: { dryRun?: boolean },
 ): Promise<ApiloCreateProductsResponse | { dryRun: true; payload: ApiloWarehouseProductPayload[] }> {
-  const dryRun = options?.dryRun ?? getApiloConfig().dryRun;
+  const dryRun =
+    options?.dryRun !== undefined
+      ? options.dryRun
+      : getApiloConfig().dryRun;
 
   if (dryRun) {
     return { dryRun: true, payload: products };

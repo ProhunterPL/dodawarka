@@ -60,8 +60,11 @@ export async function POST(request: Request) {
     }
 
     const payload = buildApiloPayload(body.product);
+    // Checkbox w UI ma pierwszeństwo; env APILO_DRY_RUN to tylko domyślna wartość.
     const dryRun =
-      body.dryRun === true || process.env.APILO_DRY_RUN === "true";
+      typeof body.dryRun === "boolean"
+        ? body.dryRun
+        : process.env.APILO_DRY_RUN === "true";
 
     const result = await createWarehouseProduct(payload, { dryRun });
 
@@ -86,7 +89,7 @@ export async function POST(request: Request) {
         payload: result.payload,
         validation,
         channelNote:
-          "Tryb dry-run — produkt nie został wysłany do Apilo. Zweryfikuj payload przed importem.",
+          "Tryb dry-run — produkt nie został wysłany do Apilo. Odznacz „dry-run” i wyślij ponownie.",
       });
     }
 
