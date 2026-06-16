@@ -12,10 +12,22 @@ export function SiteHeader() {
             Dashboard
           </Link>
           <Link
+            href="/products"
+            className="hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            Katalog
+          </Link>
+          <Link
             href="/products/new"
             className="hover:text-zinc-900 dark:hover:text-zinc-100"
           >
             Dodaj produkt
+          </Link>
+          <Link
+            href="/products/batch"
+            className="hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            Batch CSV
           </Link>
         </nav>
       </div>

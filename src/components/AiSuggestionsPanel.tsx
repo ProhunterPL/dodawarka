@@ -70,9 +70,15 @@ export function AiSuggestionsPanel({
   );
 }
 
-function formatValue(value: string | number | number[] | string[]): string {
+function formatValue(value: unknown): string {
   if (Array.isArray(value)) {
-    return value.join(", ");
+    if (value.every((item) => typeof item === "string" || typeof item === "number")) {
+      return value.join(", ");
+    }
+    return JSON.stringify(value, null, 2);
+  }
+  if (value && typeof value === "object") {
+    return JSON.stringify(value, null, 2);
   }
   return String(value);
 }

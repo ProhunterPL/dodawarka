@@ -1,8 +1,47 @@
-import type { ApiloWarehouseProductPayload } from "@/lib/apilo/types";
+import type {
+  ApiloWarehouseProductPayload,
+  ApiloWarehouseProductPatchPayload,
+  ApiloWarehouseProductPutPayload,
+} from "@/lib/apilo/types";
+import { collectProductSkus, findDuplicateSkus, parseApiloTax } from "@/lib/apilo/product-utils";
+import { hasChannelMetadataContent, getChannelMetadata } from "@/lib/product/channel-metadata";
 import { isS3Configured } from "@/lib/storage/s3-config";
 import type { ProductFormInput, ProductStatus, ValidationIssue, ValidationResult } from "./types";
 
+export interface ValidateProductOptions {
+  /** SKU już zaimportowane lokalnie — blokada przy ponownym imporcie. */
+  blockedSkus?: string[];
+  /** SKU należące do bieżącego produktu (tryb aktualizacji) — nie blokuj. */
+  ownSkus?: string[];
+  /** Wymagaj co najmniej jednego zdjęcia (np. gdy S3 jest skonfigurowany). */
+  requireImages?: boolean;
+  /** Tryb aktualizacji — wymaga mapowania ID Apilo. */
+  updateMode?: boolean;
+}
+
 const ONEDRIVE_PATTERNS = [/1drv\.ms/i, /onedrive\.live\.com/i, /sharepoint\.com/i];
+const APILO_NAME_MAX = 120;
+const APILO_GROUP_MAX = 120;
+const DEFAULT_BRAND = "Incore Sports";
+
+function normalizeForApilo(value: string): string {
+  return value
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncate(value: string, max: number): string {
+  if (value.length <= max) {
+    return value;
+  }
+  return value.slice(0, max).trim();
+}
+
+function buildVariantName(baseName: string, size: string): string {
+  const cleaned = baseName.replace(/\s+(XS|S|M|L|XL|2XL|3XL)$/i, "").trim();
+  return `${cleaned} ${size}`.trim();
+}
 
 export function isOneDriveUrl(url: string): boolean {
   return ONEDRIVE_PATTERNS.some((pattern) => pattern.test(url));
@@ -12,11 +51,28 @@ export function mapStatusToApilo(status: ProductStatus): 0 | 1 {
   return status === "active" ? 1 : 0;
 }
 
-export function validateProductInput(input: ProductFormInput): ValidationResult {
+export function validateProductInput(
+  input: ProductFormInput,
+  options: ValidateProductOptions = {},
+): ValidationResult {
   const issues: ValidationIssue[] = [];
 
   if (!input.groupName.trim()) {
     issues.push({ field: "groupName", message: "Nazwa grupy produktu jest wymagana.", severity: "error" });
+  }
+  if (input.groupName.trim().length > APILO_GROUP_MAX) {
+    issues.push({
+      field: "groupName",
+      message: `Nazwa grupy jest długa (${input.groupName.length} znaków). Zostanie skrócona do ${APILO_GROUP_MAX} dla Apilo.`,
+      severity: "warning",
+    });
+  }
+  if (input.name.trim().length > APILO_NAME_MAX) {
+    issues.push({
+      field: "name",
+      message: `Nazwa produktu jest długa (${input.name.length} znaków). Zostanie skrócona do ${APILO_NAME_MAX} dla Apilo.`,
+      severity: "warning",
+    });
   }
 
   if (!input.sku.trim() && input.variants.length === 0) {
@@ -27,14 +83,15 @@ export function validateProductInput(input: ProductFormInput): ValidationResult 
     issues.push({ field: "priceWithTax", message: "Podaj poprawną cenę brutto.", severity: "error" });
   }
 
-  if (!input.tax.trim()) {
-    issues.push({ field: "tax", message: "Stawka VAT jest wymagana.", severity: "error" });
+  if (!input.tax.trim() || Number.isNaN(Number(input.tax.replace(",", ".")))) {
+    issues.push({ field: "tax", message: "Stawka VAT jest wymagana (np. 23).", severity: "error" });
   }
 
-  if (input.categoryIds.length === 0 && !input.categoryLabel.trim()) {
+  if (input.categoryIds.length === 0) {
     issues.push({
       field: "categoryIds",
-      message: "Wybierz kategorię Apilo lub podaj etykietę do dopasowania.",
+      message:
+        "Wybierz kategorię z listy Apilo (wyszukaj i kliknij wynik — sama etykieta nie wystarczy).",
       severity: "error",
     });
   }
@@ -43,8 +100,15 @@ export function validateProductInput(input: ProductFormInput): ValidationResult 
     issues.push({ field: "description", message: "Opis długi jest wymagany.", severity: "error" });
   }
 
-  if (input.imageUrls.length === 0) {
-    issues.push({ field: "imageUrls", message: "Dodaj co najmniej jedno zdjęcie (URL).", severity: "warning" });
+  const hasImages = input.imageUrls.some((url) => url.trim());
+  if (!hasImages) {
+    issues.push({
+      field: "imageUrls",
+      message: options.requireImages
+        ? "Dodaj co najmniej jedno zdjęcie (upload S3 lub URL)."
+        : "Dodaj co najmniej jedno zdjęcie (URL).",
+      severity: options.requireImages ? "error" : "warning",
+    });
   }
 
   for (const url of input.imageUrls) {
@@ -76,6 +140,90 @@ export function validateProductInput(input: ProductFormInput): ValidationResult 
         severity: "error",
       });
     }
+    if (variant.ean?.trim() && !/^\d{8,14}$/.test(variant.ean.trim())) {
+      issues.push({
+        field: "variants",
+        message: `EAN wariantu ${variant.size} powinien mieć 8–14 cyfr.`,
+        severity: "warning",
+      });
+    }
+  }
+
+  if (input.ean.trim() && !/^\d{8,14}$/.test(input.ean.trim())) {
+    issues.push({
+      field: "ean",
+      message: "EAN powinien mieć 8–14 cyfr (GTIN).",
+      severity: "warning",
+    });
+  }
+
+  const skus = collectProductSkus(input);
+  for (const duplicate of findDuplicateSkus(skus)) {
+    issues.push({
+      field: "sku",
+      message: `Zduplikowany SKU w formularzu: ${duplicate}`,
+      severity: "error",
+    });
+  }
+
+  if (options.blockedSkus?.length) {
+    const own = new Set((options.ownSkus ?? []).map((sku) => sku.trim().toUpperCase()));
+    const blocked = new Set(
+      options.blockedSkus
+        .filter((sku) => !own.has(sku.trim().toUpperCase()))
+        .map((sku) => sku.trim().toUpperCase()),
+    );
+    for (const sku of skus) {
+      if (blocked.has(sku.toUpperCase())) {
+        issues.push({
+          field: "sku",
+          message: `SKU ${sku} było już zaimportowane do Apilo — zmień SKU lub usuń wpis z lokalnej historii.`,
+          severity: "error",
+        });
+      }
+    }
+  }
+
+  if (options.updateMode) {
+    const ids = input.apiloIdsBySku ?? {};
+    const missing = skus.filter((sku) => !ids[sku.trim()]);
+    if (missing.length > 0) {
+      issues.push({
+        field: "apiloIdsBySku",
+        message: `Brak ID Apilo dla SKU: ${missing.join(", ")}. Nowe warianty wymagają osobnego importu (CREATE).`,
+        severity: "error",
+      });
+    }
+  }
+
+  if (input.selectedChannels.includes("allegro")) {
+    const allegro = getChannelMetadata(input.channelMetadata, "allegro");
+    if (!allegro.marketplaceCategory?.trim()) {
+      issues.push({
+        field: "channelMetadata",
+        message:
+          "Allegro jest zaznaczone — uzupełnij kategorię marketplace w metadanych kanału.",
+        severity: "warning",
+      });
+    }
+    if (!hasChannelMetadataContent(allegro)) {
+      issues.push({
+        field: "channelMetadata",
+        message: "Allegro jest zaznaczone — brak jakichkolwiek notatek kanałowych.",
+        severity: "warning",
+      });
+    }
+  }
+
+  if (input.selectedChannels.includes("shoper")) {
+    const shoper = getChannelMetadata(input.channelMetadata, "shoper");
+    if (!hasChannelMetadataContent(shoper)) {
+      issues.push({
+        field: "channelMetadata",
+        message: "Shoper jest zaznaczony — rozważ dodanie kategorii lub notatek.",
+        severity: "warning",
+      });
+    }
   }
 
   const hasErrors = issues.some((issue) => issue.severity === "error");
@@ -90,24 +238,32 @@ export function buildApiloPayload(input: ProductFormInput): ApiloWarehouseProduc
       .map((url, index) => [`img-${index + 1}`, url.trim()]),
   );
 
+  const normalizedUnit = input.unit.trim();
   const base = {
     priceWithTax: input.priceWithTax,
-    tax: input.tax,
+    tax: parseApiloTax(input.tax),
     status,
     categories: input.categoryIds,
     weight: input.weight,
-    unit: input.unit || "KG",
+    unit: normalizedUnit || "szt.",
+    attributes: {
+      Marka: DEFAULT_BRAND,
+      Producent: DEFAULT_BRAND,
+    },
     description: input.description,
     shortDescription: input.shortDescription.slice(0, 256),
     images: Object.keys(images).length > 0 ? images : undefined,
-    groupName: input.groupName,
+    groupName: truncate(normalizeForApilo(input.groupName), 80),
   };
 
   if (input.variants.length === 0) {
     return [
       {
         ...base,
-        name: input.name || input.groupName,
+        name: truncate(
+          normalizeForApilo(input.name || input.groupName),
+          APILO_NAME_MAX,
+        ),
         sku: input.sku,
         quantity: input.quantity,
         ean: input.ean || undefined,
@@ -115,12 +271,88 @@ export function buildApiloPayload(input: ProductFormInput): ApiloWarehouseProduc
     ];
   }
 
+  const variantBaseName = truncate(
+    normalizeForApilo(input.name || input.groupName),
+    APILO_NAME_MAX,
+  );
+
   return input.variants.map((variant) => ({
     ...base,
-    name: `${input.groupName} ${variant.size}`.trim(),
+    name: truncate(
+      buildVariantName(variantBaseName, variant.size),
+      APILO_NAME_MAX,
+    ),
     sku: variant.sku,
     quantity: variant.quantity,
-    ean: variant.ean || input.ean || undefined,
+    ean: variant.ean || undefined,
     originalCode: variant.sku,
   }));
+}
+
+function formatApiloTaxString(tax: string): string {
+  const value = parseApiloTax(tax);
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+export function buildApiloPutPayload(
+  input: ProductFormInput,
+  apiloIdsBySku: Record<string, number>,
+): ApiloWarehouseProductPutPayload[] {
+  const items = buildApiloPayload(input);
+  const result: ApiloWarehouseProductPutPayload[] = [];
+
+  for (const item of items) {
+    const id = apiloIdsBySku[item.sku.trim()];
+    if (!id) {
+      continue;
+    }
+
+    result.push({
+      id,
+      sku: item.sku,
+      name: item.name,
+      tax: formatApiloTaxString(input.tax),
+      status: item.status,
+      quantity: item.quantity,
+      priceWithTax: item.priceWithTax,
+      originalCode: item.originalCode,
+      groupName: item.groupName,
+      attributes: item.attributes,
+      images: item.images,
+      categories: item.categories,
+      ean: item.ean,
+      weight: item.weight,
+      unit: item.unit,
+      description: item.description,
+      shortDescription: item.shortDescription,
+    });
+  }
+
+  return result;
+}
+
+export function buildApiloPatchPayload(
+  input: ProductFormInput,
+  apiloIdsBySku: Record<string, number>,
+): ApiloWarehouseProductPatchPayload[] {
+  const items = buildApiloPayload(input);
+  const result: ApiloWarehouseProductPatchPayload[] = [];
+
+  for (const item of items) {
+    const id = apiloIdsBySku[item.sku.trim()];
+    if (!id) {
+      continue;
+    }
+
+    result.push({
+      id,
+      sku: item.sku,
+      quantity: item.quantity,
+      priceWithTax: item.priceWithTax,
+      tax: formatApiloTaxString(input.tax),
+      status: item.status,
+    });
+  }
+
+  return result;
 }

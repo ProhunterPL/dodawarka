@@ -13,6 +13,96 @@ export const SALES_CHANNELS = [
   { id: "amazon-ie", label: "Amazon IE", required: false },
 ] as const;
 
+export type SalesChannelId = (typeof SALES_CHANNELS)[number]["id"];
+
+export const CHANNEL_LABELS: Record<string, string> = Object.fromEntries(
+  SALES_CHANNELS.map((channel) => [channel.id, channel.label]),
+);
+
+export type ChannelMetadataFieldKey =
+  | "marketplaceCategory"
+  | "parameters"
+  | "listingTitle"
+  | "notes";
+
+export interface ChannelFieldConfig {
+  key: ChannelMetadataFieldKey;
+  label: string;
+  placeholder?: string;
+  multiline?: boolean;
+}
+
+const MARKETPLACE_FIELDS: ChannelFieldConfig[] = [
+  {
+    key: "marketplaceCategory",
+    label: "Kategoria na marketplace",
+    placeholder: "np. Allegro: Sport i rekreacja / Odzież sportowa / Koszulki",
+  },
+  {
+    key: "parameters",
+    label: "Parametry do uzupełnienia w Apilo",
+    placeholder: "np. Marka: Incore Sports, Stan: Nowy, Kolor: czarny, Materiał: bawełna",
+    multiline: true,
+  },
+  {
+    key: "listingTitle",
+    label: "Tytuł oferty (opcjonalnie inny niż w magazynie)",
+    placeholder: "np. Koszulka treningowa Incore Sports Earn Your Reps czarna",
+  },
+  {
+    key: "notes",
+    label: "Notatki operacyjne",
+    placeholder: "np. sprawdź mapowanie rozmiarów, dodaj zdjęcie lifestyle",
+    multiline: true,
+  },
+];
+
+const SIMPLE_FIELDS: ChannelFieldConfig[] = [
+  {
+    key: "listingTitle",
+    label: "Tytuł oferty",
+    placeholder: "Opcjonalny tytuł pod dany marketplace",
+  },
+  {
+    key: "notes",
+    label: "Notatki",
+    placeholder: "Uwagi do publikacji / synchronizacji",
+    multiline: true,
+  },
+];
+
+export const CHANNEL_FIELD_SETS: Record<string, ChannelFieldConfig[]> = {
+  allegro: MARKETPLACE_FIELDS,
+  shoper: [
+    {
+      key: "marketplaceCategory",
+      label: "Kategoria w Shoper",
+      placeholder: "np. Odzież / Koszulki / Męskie",
+    },
+    {
+      key: "parameters",
+      label: "Atrybuty / filtry Shoper",
+      placeholder: "np. Producent: Incore Sports, Kolekcja: Earn Your Reps",
+      multiline: true,
+    },
+    {
+      key: "listingTitle",
+      label: "Nazwa produktu w sklepie",
+      placeholder: "Opcjonalna nazwa widoczna w Shoper",
+    },
+    {
+      key: "notes",
+      label: "Notatki Shoper",
+      placeholder: "np. przypisz do kolekcji Nowości, SEO opis skrócony",
+      multiline: true,
+    },
+  ],
+};
+
+export function getFieldsForChannel(channelId: string): ChannelFieldConfig[] {
+  return CHANNEL_FIELD_SETS[channelId] ?? SIMPLE_FIELDS;
+}
+
 export const CHANNEL_NOTE =
   "Produkt dodany do Apilo. Sprawdź/potwierdź synchronizację kanałów w panelu Apilo.";
 

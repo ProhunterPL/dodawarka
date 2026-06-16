@@ -35,6 +35,29 @@ npm run dev
 
 Aplikacja: http://localhost:3000
 
+## Testy i diagnostyka
+
+```bash
+npm test                  # testy walidacji i payloadu Apilo
+npm run apilo:test-import # ręczny POST jednego produktu do Apilo (wymaga tokenów)
+npm run apilo:auth        # odświeżenie tokenów OAuth
+```
+
+Uwaga bezpieczeństwa: skrypty, które wysyłają testowe produkty do Apilo, wymagają
+jawnego ustawienia `APILO_ALLOW_WRITE_TESTS=true` w środowisku uruchomieniowym.
+
+## Typowe problemy importu
+
+| Objaw | Przyczyna | Rozwiązanie |
+|-------|-----------|-------------|
+| `Invalid value of tax` | VAT wysłany jako string | Naprawione — VAT idzie jako liczba |
+| Walidacja kategorii | Tylko etykieta bez ID | Wyszukaj kategorię i **kliknij** wynik z listy |
+| Brak zdjęć | S3 skonfigurowany | Wgraj zdjęcie przez upload w formularzu |
+| Duplikat SKU | Produkt już w Apilo | Zmień SKU lub usuń stary wpis w Apilo |
+| `sku: unknown` w logach | Stary błąd logowania | Naprawione — logi pokazują wszystkie SKU wariantów |
+
+Szczegóły błędów Apilo widać na ekranie wyniku importu oraz w **Historii importów** na dashboardzie.
+
 ## Ścieżka MVP
 
 1. **Dashboard** — status połączenia z Apilo, ostatnio dodane produkty

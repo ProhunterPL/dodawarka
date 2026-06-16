@@ -30,6 +30,7 @@ export function applyAiSuggestions(
     imageUrls: [...product.imageUrls],
     variants: product.variants.map((variant) => ({ ...variant })),
     selectedChannels: [...product.selectedChannels],
+    channelMetadata: product.channelMetadata ? { ...product.channelMetadata } : undefined,
   };
 
   for (const suggestion of suggestions) {

@@ -1,17 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AiSuggestionsPanel } from "@/components/AiSuggestionsPanel";
-import { ChannelChecklist } from "@/components/ChannelChecklist";
+import { ChannelMetadataPanel, ChannelMetadataSummary } from "@/components/ChannelMetadataPanel";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImageUploader } from "@/components/ImageUploader";
 import { applyAiSuggestions } from "@/lib/ai/apply-suggestions";
 import type { AiProductSuggestions } from "@/lib/ai/types";
 import { APILO_NEXT_STEPS } from "@/lib/product/channels";
-import { TEST_PRODUCT } from "@/lib/product/test-product";
-import type { ProductFormInput, ProductVariantInput, ValidationIssue } from "@/lib/product/types";
-import { buildApiloPayload, validateProductInput } from "@/lib/product/validation";
+import { generateSkus } from "@/lib/product/sku";
+import { stripProductIdentifiers } from "@/lib/product/template";
+import { collectProductSkus } from "@/lib/apilo/product-utils";
+import { DEFAULT_VARIANT_SIZES, TEST_PRODUCT } from "@/lib/product/test-product";
+import type { ProductFormInput, ProductUpdateScope, ProductVariantInput, ValidationIssue } from "@/lib/product/types";
+import {
+  buildApiloPatchPayload,
+  buildApiloPayload,
+  buildApiloPutPayload,
+  validateProductInput,
+} from "@/lib/product/validation";
 
 type Step = "form" | "preview" | "result";
 
@@ -20,6 +28,8 @@ interface ImportResult {
   dryRun?: boolean;
   payload?: unknown[];
   apiloProductIds?: number[];
+  updateScope?: ProductUpdateScope;
+  updatedCount?: number;
   channelNote?: string;
   message?: string;
   validation?: { issues: ValidationIssue[] };
@@ -27,20 +37,106 @@ interface ImportResult {
   details?: unknown;
 }
 
+interface ProductWizardProps {
+  mode?: "create" | "update";
+  localProductId?: string;
+  initialProduct?: ProductFormInput;
+  apiloIdsBySku?: Record<string, number>;
+  canUpdate?: boolean;
+}
+
+interface ProductTemplateOption {
+  id: string;
+  name: string;
+}
+
 const inputClassName =
   "w-full rounded-xl border border-zinc-300 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-950";
 
-export function ProductWizard() {
+export function ProductWizard({
+  mode = "create",
+  localProductId,
+  initialProduct,
+  apiloIdsBySku: initialApiloIds = {},
+  canUpdate = true,
+}: ProductWizardProps = {}) {
+  const isUpdateMode = mode === "update";
   const [step, setStep] = useState<Step>("form");
-  const [product, setProduct] = useState<ProductFormInput>(TEST_PRODUCT);
-  const [dryRun, setDryRun] = useState(true);
+  const [product, setProduct] = useState<ProductFormInput>(
+    initialProduct ?? TEST_PRODUCT,
+  );
+  const [apiloIdsBySku] = useState<Record<string, number>>(initialApiloIds);
+  const [updateScope, setUpdateScope] = useState<ProductUpdateScope>("full");
+  const [dryRun, setDryRun] = useState(isUpdateMode ? false : true);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<AiProductSuggestions | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [requireImages, setRequireImages] = useState(false);
+  const [eanLoading, setEanLoading] = useState(false);
+  const [eanMessage, setEanMessage] = useState<string | null>(null);
+  const [unlockingSkus, setUnlockingSkus] = useState(false);
+  const [skuLockMessage, setSkuLockMessage] = useState<string | null>(null);
+  const [eanFiles, setEanFiles] = useState<string[]>([]);
+  const [selectedEanFile, setSelectedEanFile] = useState("");
+  const [templates, setTemplates] = useState<ProductTemplateOption[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [templateMessage, setTemplateMessage] = useState<string | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
-  const validation = useMemo(() => validateProductInput(product), [product]);
-  const previewPayload = useMemo(() => buildApiloPayload(product), [product]);
+  useEffect(() => {
+    void fetch("/api/uploads")
+      .then((response) => response.json())
+      .then((data: { configured?: boolean }) => {
+        setRequireImages(Boolean(data.configured));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/ean/gs1")
+      .then((response) => response.json())
+      .then((data: { files?: string[]; selectedFile?: string | null }) => {
+        const files = data.files ?? [];
+        setEanFiles(files);
+        setSelectedEanFile(data.selectedFile ?? files[0] ?? "");
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (isUpdateMode) {
+      return;
+    }
+    void fetch("/api/templates")
+      .then((response) => response.json())
+      .then((data: { templates?: ProductTemplateOption[] }) => {
+        setTemplates(data.templates ?? []);
+      })
+      .catch(() => undefined);
+  }, [isUpdateMode]);
+
+  const validation = useMemo(
+    () =>
+      validateProductInput(
+        { ...product, apiloIdsBySku },
+        {
+          requireImages: isUpdateMode && updateScope === "quick" ? false : requireImages,
+          updateMode: isUpdateMode,
+          ownSkus: isUpdateMode ? Object.keys(apiloIdsBySku) : undefined,
+        },
+      ),
+    [product, requireImages, isUpdateMode, updateScope, apiloIdsBySku],
+  );
+  const previewPayload = useMemo(() => {
+    if (isUpdateMode) {
+      return updateScope === "quick"
+        ? buildApiloPatchPayload({ ...product, apiloIdsBySku }, apiloIdsBySku)
+        : buildApiloPutPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
+    }
+    return buildApiloPayload(product);
+  }, [product, isUpdateMode, updateScope, apiloIdsBySku]);
   const hasValidationIssues = validation.issues.length > 0;
 
   async function requestAiFixes(context?: {
@@ -102,14 +198,99 @@ export function ProductWizard() {
     }));
   }
 
+  function removeVariant(index: number) {
+    setProduct((current) => ({
+      ...current,
+      variants: current.variants.filter((_, i) => i !== index),
+    }));
+  }
+
+  function addVariant(size: string) {
+    setProduct((current) => {
+      if (current.variants.some((variant) => variant.size === size)) {
+        return current;
+      }
+      const skuPrefix =
+        current.variants[0]?.sku.replace(/-(XS|S|M|L|XL|2XL|3XL)$/i, "") ||
+        current.sku.replace(/-(XS|S|M|L|XL|2XL|3XL)$/i, "");
+
+      return {
+        ...current,
+        variants: [
+          ...current.variants,
+          {
+            size,
+            sku: skuPrefix ? `${skuPrefix}-${size}` : "",
+            quantity: 0,
+          },
+        ],
+      };
+    });
+  }
+
+  async function autofillEansFromGs1() {
+    setEanLoading(true);
+    setEanMessage(null);
+    try {
+      const response = await fetch("/api/ean/gs1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product,
+          filename: selectedEanFile || undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        success: boolean;
+        message?: string;
+        mainEan?: string | null;
+        variantEans?: Record<string, string>;
+        matchedRows?: Array<{ size: string | null; ean: string; name: string }>;
+      };
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Nie udało się wczytać EAN z pliku GS1.");
+      }
+
+      setProduct((current) => ({
+        ...current,
+        ean: data.mainEan ?? current.ean,
+        variants: current.variants.map((variant) => ({
+          ...variant,
+          ean: data.variantEans?.[variant.size.toUpperCase()] ?? variant.ean,
+        })),
+      }));
+
+      setEanMessage(
+        data.matchedRows?.length
+          ? `Uzupełniono EAN dla ${data.matchedRows.length} wariantów z pliku GS1.`
+          : "Nie znaleziono dopasowań po nazwie/rozmiarze w pliku GS1.",
+      );
+    } catch (error) {
+      setEanMessage(error instanceof Error ? error.message : "Błąd importu EAN.");
+    } finally {
+      setEanLoading(false);
+    }
+  }
+
   async function submitImport() {
     setSubmitting(true);
     setResult(null);
     try {
       const response = await fetch("/api/apilo/products", {
-        method: "POST",
+        method: isUpdateMode ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product, dryRun }),
+        body: JSON.stringify({
+          product: { ...product, apiloIdsBySku },
+          dryRun,
+          ...(isUpdateMode
+            ? {
+                apiloIdsBySku,
+                updateScope,
+                localProductId,
+              }
+            : {}),
+        }),
       });
       const data = (await response.json()) as ImportResult;
       setResult(data);
@@ -136,6 +317,97 @@ export function ProductWizard() {
     }
   }
 
+  async function clearSkuLocks() {
+    setUnlockingSkus(true);
+    setSkuLockMessage(null);
+    try {
+      const skus = collectProductSkus(product);
+      const response = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: skus.length > 0 ? "clearSkuLocksFor" : "clearSkuLocks",
+          skus,
+        }),
+      });
+      const data = (await response.json()) as { success?: boolean; message?: string };
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Nie udało się wyczyścić blokady SKU.");
+      }
+      setSkuLockMessage(data.message ?? "Wyczyszczono blokadę SKU.");
+    } catch (error) {
+      setSkuLockMessage(
+        error instanceof Error ? error.message : "Nie udało się wyczyścić blokady SKU.",
+      );
+    } finally {
+      setUnlockingSkus(false);
+    }
+  }
+
+  async function loadTemplate(templateId: string) {
+    if (!templateId) {
+      return;
+    }
+    try {
+      const response = await fetch(`/api/templates?id=${encodeURIComponent(templateId)}`);
+      const data = (await response.json()) as {
+        template?: { id: string; name: string; product: ProductFormInput };
+      };
+      if (!response.ok || !data.template) {
+        throw new Error("Nie udało się wczytać szablonu.");
+      }
+      setProduct(stripProductIdentifiers(data.template.product));
+      setTemplateMessage(`Wczytano szablon: ${data.template.name}`);
+    } catch (error) {
+      setTemplateMessage(
+        error instanceof Error ? error.message : "Błąd wczytywania szablonu.",
+      );
+    }
+  }
+
+  async function saveAsTemplate() {
+    if (!templateName.trim()) {
+      setTemplateMessage("Podaj nazwę szablonu.");
+      return;
+    }
+
+    setSavingTemplate(true);
+    setTemplateMessage(null);
+    try {
+      const response = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: templateName.trim(),
+          product,
+        }),
+      });
+      const data = (await response.json()) as {
+        success?: boolean;
+        message?: string;
+        template?: { id: string; name: string };
+      };
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Nie udało się zapisać szablonu.");
+      }
+      if (data.template) {
+        setTemplates((current) => [
+          data.template!,
+          ...current.filter((item) => item.id !== data.template!.id),
+        ]);
+        setSelectedTemplateId(data.template.id);
+      }
+      setTemplateName("");
+      setTemplateMessage(data.message ?? "Zapisano szablon.");
+    } catch (error) {
+      setTemplateMessage(
+        error instanceof Error ? error.message : "Błąd zapisu szablonu.",
+      );
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
+
   if (step === "preview") {
     return (
       <div className="space-y-6">
@@ -149,7 +421,18 @@ export function ProductWizard() {
           />
         )}
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-lg font-medium">Podgląd payloadu Apilo</h2>
+          <h2 className="text-lg font-medium">Metadane kanałów (notatki)</h2>
+          <div className="mt-3">
+            <ChannelMetadataSummary
+              selected={product.selectedChannels}
+              metadata={product.channelMetadata}
+            />
+          </div>
+        </section>
+        <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+          <h2 className="text-lg font-medium">
+            Podgląd payloadu Apilo ({isUpdateMode ? updateScope.toUpperCase() : "CREATE"})
+          </h2>
           <pre className="mt-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-sm text-zinc-100">
             {JSON.stringify(previewPayload, null, 2)}
           </pre>
@@ -164,7 +447,7 @@ export function ProductWizard() {
           </button>
           <button
             type="button"
-            disabled={!validation.valid || submitting}
+            disabled={!validation.valid || submitting || (isUpdateMode && !canUpdate)}
             onClick={() => void submitImport()}
             className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
           >
@@ -172,7 +455,9 @@ export function ProductWizard() {
               ? "Wysyłanie…"
               : dryRun
                 ? "Uruchom dry-run"
-                : "Wyślij do Apilo"}
+                : isUpdateMode
+                  ? "Aktualizuj w Apilo"
+                  : "Wyślij do Apilo"}
           </button>
         </div>
       </div>
@@ -190,11 +475,22 @@ export function ProductWizard() {
           }`}
         >
           <h2 className="text-lg font-medium">
-            {result.success ? "Import zakończony" : "Import nieudany"}
+            {result.success
+              ? isUpdateMode
+                ? "Aktualizacja zakończona"
+                : "Import zakończony"
+              : isUpdateMode
+                ? "Aktualizacja nieudana"
+                : "Import nieudany"}
           </h2>
-          <p className="mt-2 text-sm">
+          <p className="mt-2 whitespace-pre-wrap text-sm">
             {result.channelNote ?? result.message ?? "Sprawdź szczegóły poniżej."}
           </p>
+          {result.details ? (
+            <pre className="mt-3 overflow-x-auto rounded-xl bg-red-950/10 p-3 text-xs text-red-900 dark:text-red-200">
+              {JSON.stringify(result.details, null, 2)}
+            </pre>
+          ) : null}
           {result.apiloProductIds?.length ? (
             <p className="mt-2 text-sm">
               ID produktu w Apilo: {result.apiloProductIds.join(", ")}
@@ -236,6 +532,18 @@ export function ProductWizard() {
           </ol>
         </section>
 
+        {result.success ? (
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+            <h3 className="font-medium">Notatki kanałów do synchronizacji</h3>
+            <div className="mt-3">
+              <ChannelMetadataSummary
+                selected={product.selectedChannels}
+                metadata={product.channelMetadata}
+              />
+            </div>
+          </section>
+        ) : null}
+
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
@@ -260,14 +568,60 @@ export function ProductWizard() {
 
   return (
     <div className="space-y-8">
+      {isUpdateMode ? (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+          Tryb aktualizacji — zmiany trafią do istniejących produktów w Apilo (ID:{" "}
+          {Object.values(apiloIdsBySku).join(", ") || "brak"}).
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-3">
+        {!isUpdateMode ? (
+          <button
+            type="button"
+            onClick={() => setProduct(TEST_PRODUCT)}
+            className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
+          >
+            Wczytaj produkt testowy
+          </button>
+        ) : null}
         <button
           type="button"
-          onClick={() => setProduct(TEST_PRODUCT)}
-          className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
+          onClick={() => setProduct((current) => generateSkus(current))}
+          className="rounded-full border border-purple-300 bg-purple-50 px-4 py-2 text-sm text-purple-900 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-200"
         >
-          Wczytaj produkt testowy
+          Generuj SKU automatycznie
         </button>
+        <button
+          type="button"
+          onClick={() => void clearSkuLocks()}
+          disabled={unlockingSkus}
+          className="rounded-full border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-900 disabled:opacity-60 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-200"
+        >
+          {unlockingSkus
+            ? "Czyszczenie blokady SKU…"
+            : "Odblokuj SKU z formularza"}
+        </button>
+        {!isUpdateMode && templates.length > 0 ? (
+          <label className="inline-flex items-center gap-2 rounded-full border border-violet-300 bg-violet-50 px-4 py-2 text-sm text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
+            <span>Szablon:</span>
+            <select
+              value={selectedTemplateId}
+              onChange={(event) => {
+                const value = event.target.value;
+                setSelectedTemplateId(value);
+                void loadTemplate(value);
+              }}
+              className="rounded-md border border-violet-200 bg-white px-2 py-0.5 text-sm dark:border-violet-900 dark:bg-zinc-950"
+            >
+              <option value="">— wybierz —</option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <input
             type="checkbox"
@@ -276,11 +630,97 @@ export function ProductWizard() {
           />
           Tryb dry-run (bez wysyłki do Apilo)
         </label>
+        {isUpdateMode ? (
+          <label className="inline-flex items-center gap-2 rounded-full border border-blue-300 bg-blue-50 px-4 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+            <span>Zakres:</span>
+            <select
+              value={updateScope}
+              onChange={(event) =>
+                setUpdateScope(event.target.value as ProductUpdateScope)
+              }
+              className="rounded-md border border-blue-200 bg-white px-2 py-0.5 text-sm dark:border-blue-900 dark:bg-zinc-950"
+            >
+              <option value="full">Pełna (PUT — nazwa, opisy, zdjęcia)</option>
+              <option value="quick">Szybka (PATCH — cena, stan, VAT)</option>
+            </select>
+          </label>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void autofillEansFromGs1()}
+          disabled={eanLoading || eanFiles.length === 0}
+          className="rounded-full border border-blue-300 bg-blue-50 px-4 py-2 text-sm text-blue-900 disabled:opacity-60 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"
+        >
+          {eanLoading ? "Wczytywanie EAN z GS1…" : "Wczytaj EAN z pliku GS1"}
+        </button>
         {!dryRun ? (
           <span className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
             Wysyłka do Apilo włączona
           </span>
         ) : null}
+      </div>
+      {eanMessage ? (
+        <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/40">
+          {eanMessage}
+        </p>
+      ) : null}
+      {skuLockMessage ? (
+        <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/40">
+          {skuLockMessage}
+        </p>
+      ) : null}
+      {templateMessage ? (
+        <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/40">
+          {templateMessage}
+        </p>
+      ) : null}
+      {!isUpdateMode ? (
+        <section className="rounded-2xl border border-dashed border-violet-300 bg-violet-50/50 p-4 dark:border-violet-900 dark:bg-violet-950/20">
+          <h3 className="text-sm font-medium text-violet-900 dark:text-violet-200">
+            Zapisz bieżący formularz jako szablon
+          </h3>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <input
+              className={`${inputClassName} max-w-sm`}
+              placeholder="Nazwa szablonu, np. Koszulka Incore"
+              value={templateName}
+              onChange={(event) => setTemplateName(event.target.value)}
+            />
+            <button
+              type="button"
+              disabled={savingTemplate}
+              onClick={() => void saveAsTemplate()}
+              className="rounded-full border border-violet-300 bg-white px-4 py-2 text-sm dark:border-violet-900 dark:bg-zinc-950"
+            >
+              {savingTemplate ? "Zapisywanie…" : "Zapisz szablon"}
+            </button>
+            <Link
+              href="/products"
+              className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
+            >
+              Katalog produktów
+            </Link>
+          </div>
+        </section>
+      ) : null}
+      <div className="max-w-xl">
+        <Field label="Plik GS1 (kody_ean)">
+          <select
+            className={inputClassName}
+            value={selectedEanFile}
+            onChange={(e) => setSelectedEanFile(e.target.value)}
+            disabled={eanFiles.length === 0}
+          >
+            {eanFiles.length === 0 ? (
+              <option value="">Brak plików .xlsx w katalogu kody_ean</option>
+            ) : null}
+            {eanFiles.map((file) => (
+              <option key={file} value={file}>
+                {file}
+              </option>
+            ))}
+          </select>
+        </Field>
       </div>
 
       <ValidationPanel issues={validation.issues} />
@@ -394,6 +834,19 @@ export function ProductWizard() {
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="text-lg font-medium">Warianty rozmiarów</h2>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {DEFAULT_VARIANT_SIZES.map((size) => (
+            <button
+              key={size}
+              type="button"
+              onClick={() => addVariant(size)}
+              disabled={product.variants.some((variant) => variant.size === size)}
+              className="rounded-full border border-zinc-300 px-3 py-1 text-xs disabled:opacity-50 dark:border-zinc-700"
+            >
+              Dodaj {size}
+            </button>
+          ))}
+        </div>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
@@ -402,6 +855,8 @@ export function ProductWizard() {
                 <th className="px-3 py-2">SKU</th>
                 <th className="px-3 py-2">Stan</th>
                 <th className="px-3 py-2">EAN</th>
+                {isUpdateMode ? <th className="px-3 py-2">ID Apilo</th> : null}
+                <th className="px-3 py-2">Akcje</th>
               </tr>
             </thead>
             <tbody>
@@ -431,6 +886,20 @@ export function ProductWizard() {
                       value={variant.ean ?? ""}
                       onChange={(e) => updateVariant(index, { ean: e.target.value })}
                     />
+                  </td>
+                  {isUpdateMode ? (
+                    <td className="px-3 py-2 text-xs text-zinc-500">
+                      {apiloIdsBySku[variant.sku.trim()] ?? "—"}
+                    </td>
+                  ) : null}
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => removeVariant(index)}
+                      className="rounded-full border border-red-300 px-3 py-1 text-xs text-red-700 dark:border-red-900 dark:text-red-300"
+                    >
+                      Usuń
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -466,14 +935,19 @@ export function ProductWizard() {
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-medium">Kanały docelowe</h2>
+        <h2 className="text-lg font-medium">Kanały docelowe i metadane</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          W MVP synchronizacja odbywa się w panelu Apilo po utworzeniu produktu.
+          Zaznacz kanały i zapisz notatki (kategoria, parametry, tytuł). Publikacja nadal
+          odbywa się ręcznie w panelu Apilo — te dane są podpowiedzią operacyjną.
         </p>
         <div className="mt-4">
-          <ChannelChecklist
+          <ChannelMetadataPanel
             selected={product.selectedChannels}
-            onChange={(channels) => updateField("selectedChannels", channels)}
+            metadata={product.channelMetadata}
+            onSelectedChange={(channels) => updateField("selectedChannels", channels)}
+            onMetadataChange={(channelMetadata) =>
+              updateField("channelMetadata", channelMetadata)
+            }
           />
         </div>
       </section>
@@ -481,11 +955,11 @@ export function ProductWizard() {
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          disabled={!validation.valid}
+          disabled={!validation.valid || (isUpdateMode && !canUpdate)}
           onClick={() => setStep("preview")}
           className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
         >
-          Podgląd payloadu
+          {isUpdateMode ? "Podgląd aktualizacji" : "Podgląd payloadu"}
         </button>
       </div>
     </div>

@@ -1,7 +1,11 @@
 import { getAllCategories } from "@/lib/apilo/client";
 import type { ApiloCategory } from "@/lib/apilo/types";
 import { chatJson, isOpenAiConfigured } from "./openai-client";
-import type { AiProductSuggestions, SuggestProductFixesInput } from "./types";
+import type {
+  AiFieldSuggestion,
+  AiProductSuggestions,
+  SuggestProductFixesInput,
+} from "./types";
 
 const SYSTEM_PROMPT = `Jesteś asystentem e-commerce dla sklepu Incore Sports integrującego produkty z Apilo.
 Twoim zadaniem jest uzupełnić braki w danych produktu na podstawie błędów walidacji lub odpowiedzi API Apilo.
@@ -98,8 +102,86 @@ export async function suggestProductFixes(
 
   return {
     summary: result.summary,
-    suggestions: result.suggestions.filter(
-      (item) => item.field && item.reason && item.value !== undefined,
-    ),
+    suggestions: result.suggestions
+      .map(normalizeSuggestion)
+      .filter((item): item is AiFieldSuggestion => item !== null),
   };
+}
+
+const ALLOWED_FIELDS = new Set<AiFieldSuggestion["field"]>([
+  "description",
+  "shortDescription",
+  "categoryIds",
+  "categoryLabel",
+  "groupName",
+  "name",
+  "sku",
+  "ean",
+  "imageUrls",
+  "priceWithTax",
+  "tax",
+  "unit",
+  "quantity",
+  "weight",
+]);
+
+function normalizeSuggestion(raw: unknown): AiFieldSuggestion | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const item = raw as {
+    field?: unknown;
+    value?: unknown;
+    reason?: unknown;
+  };
+  if (typeof item.field !== "string" || typeof item.reason !== "string") {
+    return null;
+  }
+
+  const field = item.field as AiFieldSuggestion["field"];
+  if (!ALLOWED_FIELDS.has(field)) {
+    return null;
+  }
+
+  const normalizedValue = normalizeSuggestionValue(item.value, field);
+  if (normalizedValue === undefined) {
+    return null;
+  }
+
+  return {
+    field,
+    value: normalizedValue,
+    reason: item.reason,
+  };
+}
+
+function normalizeSuggestionValue(
+  value: unknown,
+  field: AiFieldSuggestion["field"],
+): AiFieldSuggestion["value"] | undefined {
+  if (field === "categoryIds") {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return value
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item));
+  }
+
+  if (field === "imageUrls") {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  if (field === "quantity" || field === "weight") {
+    const asNumber = Number(value);
+    return Number.isFinite(asNumber) ? asNumber : undefined;
+  }
+
+  return typeof value === "string" || typeof value === "number"
+    ? value
+    : undefined;
 }

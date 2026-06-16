@@ -9,7 +9,11 @@ import type {
   ApiloCategoriesResponse,
   ApiloCreateProductsResponse,
   ApiloTokenResponse,
+  ApiloUpdateProductsResponse,
+  ApiloWarehouseProductDetail,
+  ApiloWarehouseProductPatchPayload,
   ApiloWarehouseProductPayload,
+  ApiloWarehouseProductPutPayload,
 } from "./types";
 
 type GrantType = "authorization_code" | "refresh_token";
@@ -210,6 +214,56 @@ export async function createWarehouseProduct(
 
   return apiloFetch<ApiloCreateProductsResponse>("/rest/api/warehouse/product/", {
     method: "POST",
+    body: JSON.stringify(products),
+  });
+}
+
+export async function getWarehouseProduct(
+  id: number,
+): Promise<ApiloWarehouseProductDetail> {
+  return apiloFetch<ApiloWarehouseProductDetail>(
+    `/rest/api/warehouse/product/${id}/`,
+  );
+}
+
+export async function updateWarehouseProducts(
+  products: ApiloWarehouseProductPutPayload[],
+  options?: { dryRun?: boolean },
+): Promise<
+  ApiloUpdateProductsResponse | { dryRun: true; payload: ApiloWarehouseProductPutPayload[] }
+> {
+  const dryRun =
+    options?.dryRun !== undefined
+      ? options.dryRun
+      : getApiloConfig().dryRun;
+
+  if (dryRun) {
+    return { dryRun: true, payload: products };
+  }
+
+  return apiloFetch<ApiloUpdateProductsResponse>("/rest/api/warehouse/product/", {
+    method: "PUT",
+    body: JSON.stringify(products),
+  });
+}
+
+export async function patchWarehouseProducts(
+  products: ApiloWarehouseProductPatchPayload[],
+  options?: { dryRun?: boolean },
+): Promise<
+  ApiloUpdateProductsResponse | { dryRun: true; payload: ApiloWarehouseProductPatchPayload[] }
+> {
+  const dryRun =
+    options?.dryRun !== undefined
+      ? options.dryRun
+      : getApiloConfig().dryRun;
+
+  if (dryRun) {
+    return { dryRun: true, payload: products };
+  }
+
+  return apiloFetch<ApiloUpdateProductsResponse>("/rest/api/warehouse/product/", {
+    method: "PATCH",
     body: JSON.stringify(products),
   });
 }

@@ -56,8 +56,12 @@ export function CategoryPicker({
         <input
           value={query}
           onChange={(event) => {
-            setQuery(event.target.value);
-            onLabelChange(event.target.value);
+            const next = event.target.value;
+            setQuery(next);
+            onLabelChange(next);
+            if (value.length > 0) {
+              onValueChange([]);
+            }
           }}
           placeholder="Szukaj kategorii Apilo, np. T-shirt"
           className="w-full rounded-xl border border-zinc-300 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-950"
@@ -78,8 +82,8 @@ export function CategoryPicker({
           Wybrana kategoria ID: {value.join(", ")} ({label})
         </p>
       ) : (
-        <p className="text-sm text-zinc-500">
-          Wybierz kategorię z listy lub dopasuj ręcznie po imporcie w Apilo.
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          Wpisz frazę, kliknij „Pobierz kategorie”, a następnie wybierz pozycję z listy.
         </p>
       )}
 

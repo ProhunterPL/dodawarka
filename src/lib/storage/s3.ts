@@ -1,6 +1,11 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
-import { getS3Config } from "./s3-config";
+import { getS3Config, isOurS3Url } from "./s3-config";
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -34,6 +39,27 @@ export interface UploadImageResult {
   size: number;
 }
 
+export interface StoredS3Image {
+  url: string;
+  key: string;
+  size?: number;
+  lastModified?: string;
+}
+
+function createS3Client() {
+  const config = getS3Config();
+  return {
+    config,
+    client: new S3Client({
+      region: config.region,
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      },
+    }),
+  };
+}
+
 export async function uploadImageToS3(
   file: File,
 ): Promise<UploadImageResult> {
@@ -48,14 +74,7 @@ export async function uploadImageToS3(
   const config = getS3Config();
   const key = buildObjectKey(file.name);
   const buffer = Buffer.from(await file.arrayBuffer());
-
-  const client = new S3Client({
-    region: config.region,
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
-  });
+  const { client } = createS3Client();
 
   await client.send(
     new PutObjectCommand({
@@ -73,4 +92,64 @@ export async function uploadImageToS3(
     contentType: file.type,
     size: file.size,
   };
+}
+
+export async function listRecentImagesFromS3(
+  limit = 30,
+): Promise<StoredS3Image[]> {
+  const { config, client } = createS3Client();
+
+  const response = await client.send(
+    new ListObjectsV2Command({
+      Bucket: config.bucket,
+      Prefix: "incore-products/",
+      MaxKeys: Math.max(1, Math.min(limit, 200)),
+    }),
+  );
+
+  const items = response.Contents ?? [];
+  return items
+    .filter((item) => Boolean(item.Key) && !item.Key?.endsWith("/"))
+    .sort((a, b) => {
+      const aTime = a.LastModified?.getTime() ?? 0;
+      const bTime = b.LastModified?.getTime() ?? 0;
+      return bTime - aTime;
+    })
+    .map((item) => ({
+      key: item.Key as string,
+      url: `${config.publicBaseUrl}/${item.Key as string}`,
+      size: item.Size,
+      lastModified: item.LastModified?.toISOString(),
+    }));
+}
+
+export function getS3KeyFromUrl(url: string): string | null {
+  if (!isOurS3Url(url)) {
+    return null;
+  }
+  const base = getS3Config().publicBaseUrl;
+  const key = url.slice(base.length + 1);
+  return key || null;
+}
+
+export async function deleteImageFromS3(
+  target: { key?: string; url?: string },
+): Promise<{ key: string }> {
+  const key = target.key ?? (target.url ? getS3KeyFromUrl(target.url) : null);
+  if (!key) {
+    throw new Error("Nieprawidłowy klucz lub URL zdjęcia S3.");
+  }
+
+  if (!key.startsWith("incore-products/")) {
+    throw new Error("Można usuwać tylko pliki z prefiksu incore-products/.");
+  }
+
+  const { config, client } = createS3Client();
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: config.bucket,
+      Key: key,
+    }),
+  );
+  return { key };
 }

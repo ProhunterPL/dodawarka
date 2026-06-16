@@ -8,13 +8,16 @@
     "start": "next start",
     "lint": "eslint",
     "apilo:auth": "node scripts/apilo-auth.mjs",
-    "s3:setup": "node scripts/setup-s3-bucket.mjs"
+    "apilo:test-import": "node scripts/test-apilo-import.mjs",
+    "s3:setup": "node scripts/setup-s3-bucket.mjs",
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1068.0",
     "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -24,6 +27,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }
