@@ -8,7 +8,10 @@ interface Gs1Entry {
   name: string;
   normalizedName: string;
   size: string | null;
+  sku: string;
 }
+
+import type { Gs1CatalogEntry } from "./types";
 
 const SIZE_PATTERN = /\b(XS|S|M|L|XL|2XL|3XL)\b/i;
 const STOPWORDS = new Set([
@@ -103,6 +106,7 @@ export function readGs1Entries(filePath: string): Gs1Entry[] {
   const header = rows[1]?.map((cell) => String(cell).trim()) ?? [];
   const gtinIndex = header.indexOf("GTIN");
   const nameIndex = header.indexOf("Pełna, ustandaryzowana nazwa produktu.");
+  const skuIndex = header.indexOf("Symbol wewnętrzny");
   if (gtinIndex < 0 || nameIndex < 0) {
     throw new Error("Nie znaleziono kolumn GTIN/Nazwa w pliku GS1.");
   }
@@ -117,9 +121,19 @@ export function readGs1Entries(filePath: string): Gs1Entry[] {
         name,
         normalizedName: normalizeText(name),
         size: extractSize(name),
+        sku: skuIndex >= 0 ? String(row[skuIndex] ?? "").trim() : "",
       };
     })
     .filter((entry) => /^\d{8,14}$/.test(entry.ean) && entry.name.length > 0);
+}
+
+export function listGs1CatalogEntries(filename?: string): Gs1CatalogEntry[] {
+  const workbookPath = resolveGs1Workbook(filename);
+  return readGs1Entries(workbookPath).map((entry) => ({
+    ean: entry.ean,
+    name: entry.name,
+    size: entry.size,
+  }));
 }
 
 export function matchEansForProduct(
@@ -141,9 +155,17 @@ export function matchEansForProduct(
 
   for (const variant of product.variants) {
     const wantedSize = variant.size.toUpperCase();
-    const match = sorted.find(
-      (item) => item.entry.size === wantedSize && !Object.values(variantEans).includes(item.entry.ean),
+    const bySku = sorted.find(
+      (item) =>
+        item.entry.sku &&
+        item.entry.sku.toUpperCase() === variant.sku.toUpperCase() &&
+        !Object.values(variantEans).includes(item.entry.ean),
     );
+    const match =
+      bySku ??
+      sorted.find(
+        (item) => item.entry.size === wantedSize && !Object.values(variantEans).includes(item.entry.ean),
+      );
     if (match) {
       variantEans[wantedSize] = match.entry.ean;
       matchedRows.push({

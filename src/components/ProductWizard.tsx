@@ -7,6 +7,7 @@ import { ChannelMetadataPanel, ChannelMetadataSummary } from "@/components/Chann
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImageUploader } from "@/components/ImageUploader";
 import { applyAiSuggestions } from "@/lib/ai/apply-suggestions";
+import { downloadProductEanTemplateXlsx } from "@/lib/ean/download-client";
 import type { AiProductSuggestions } from "@/lib/ai/types";
 import { APILO_NEXT_STEPS } from "@/lib/product/channels";
 import { generateSkus } from "@/lib/product/sku";
@@ -14,7 +15,9 @@ import { stripProductIdentifiers } from "@/lib/product/template";
 import { collectProductSkus } from "@/lib/apilo/product-utils";
 import { DEFAULT_VARIANT_SIZES, TEST_PRODUCT } from "@/lib/product/test-product";
 import type { ProductFormInput, ProductUpdateScope, ProductVariantInput, ValidationIssue } from "@/lib/product/types";
+import { applyMetadataFixes, describeMetadataFix } from "@/lib/product/metadata-fix";
 import {
+  buildApiloMetadataPutPayload,
   buildApiloPatchPayload,
   buildApiloPayload,
   buildApiloPutPayload,
@@ -84,6 +87,7 @@ export function ProductWizard({
   const [templateName, setTemplateName] = useState("");
   const [templateMessage, setTemplateMessage] = useState<string | null>(null);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [metadataFixMessage, setMetadataFixMessage] = useState<string | null>(null);
 
   useEffect(() => {
     void fetch("/api/uploads")
@@ -122,7 +126,10 @@ export function ProductWizard({
       validateProductInput(
         { ...product, apiloIdsBySku },
         {
-          requireImages: isUpdateMode && updateScope === "quick" ? false : requireImages,
+          requireImages:
+            isUpdateMode && (updateScope === "quick" || updateScope === "metadata")
+              ? false
+              : requireImages,
           updateMode: isUpdateMode,
           ownSkus: isUpdateMode ? Object.keys(apiloIdsBySku) : undefined,
         },
@@ -131,9 +138,13 @@ export function ProductWizard({
   );
   const previewPayload = useMemo(() => {
     if (isUpdateMode) {
-      return updateScope === "quick"
-        ? buildApiloPatchPayload({ ...product, apiloIdsBySku }, apiloIdsBySku)
-        : buildApiloPutPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
+      if (updateScope === "quick") {
+        return buildApiloPatchPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
+      }
+      if (updateScope === "metadata") {
+        return buildApiloMetadataPutPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
+      }
+      return buildApiloPutPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
     }
     return buildApiloPayload(product);
   }, [product, isUpdateMode, updateScope, apiloIdsBySku]);
@@ -273,7 +284,10 @@ export function ProductWizard({
     }
   }
 
-  async function submitImport() {
+  async function submitImport(options?: { updateScopeOverride?: ProductUpdateScope; dryRunOverride?: boolean }) {
+    const scope = options?.updateScopeOverride ?? updateScope;
+    const runDry = options?.dryRunOverride ?? dryRun;
+
     setSubmitting(true);
     setResult(null);
     try {
@@ -282,11 +296,11 @@ export function ProductWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           product: { ...product, apiloIdsBySku },
-          dryRun,
+          dryRun: runDry,
           ...(isUpdateMode
             ? {
                 apiloIdsBySku,
-                updateScope,
+                updateScope: scope,
                 localProductId,
               }
             : {}),
@@ -294,6 +308,10 @@ export function ProductWizard({
       });
       const data = (await response.json()) as ImportResult;
       setResult(data);
+      if (data.success && scope === "metadata") {
+        setProduct((current) => applyMetadataFixes(current));
+        setMetadataFixMessage("Metadane zostały poprawione w Apilo i zapisane lokalnie.");
+      }
       if (data.aiSuggestions) {
         setAiSuggestions(data.aiSuggestions);
       } else if (!data.success) {
@@ -574,6 +592,53 @@ export function ProductWizard({
           {Object.values(apiloIdsBySku).join(", ") || "brak"}).
         </div>
       ) : null}
+      {isUpdateMode && canUpdate ? (
+        <section
+          id="metadata-fix"
+          className="rounded-2xl border border-emerald-300 bg-emerald-50/80 p-5 dark:border-emerald-900 dark:bg-emerald-950/30"
+        >
+          <h3 className="font-medium text-emerald-950 dark:text-emerald-100">
+            Napraw metadane w Apilo
+          </h3>
+          <p className="mt-1 text-sm text-emerald-900/80 dark:text-emerald-200/80">
+            Wyśle PUT dla wszystkich wariantów: jednostka, kategoria i producent (atrybut 13).
+            Opisy, ceny i zdjęcia pozostają bez zmian.
+          </p>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-emerald-900 dark:text-emerald-100">
+            {describeMetadataFix(product).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={submitting || !validation.valid}
+              onClick={() =>
+                void submitImport({ updateScopeOverride: "metadata", dryRunOverride: false })
+              }
+              className="rounded-full bg-emerald-800 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-emerald-200 dark:text-emerald-950"
+            >
+              {submitting ? "Wysyłanie…" : "Napraw metadane w Apilo"}
+            </button>
+            <button
+              type="button"
+              disabled={submitting || !validation.valid}
+              onClick={() => {
+                setUpdateScope("metadata");
+                setStep("preview");
+              }}
+              className="rounded-full border border-emerald-400 px-5 py-2.5 text-sm font-medium text-emerald-900 dark:border-emerald-800 dark:text-emerald-100"
+            >
+              Podgląd payloadu metadanych
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {metadataFixMessage ? (
+        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+          {metadataFixMessage}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-3">
         {!isUpdateMode ? (
           <button
@@ -642,6 +707,7 @@ export function ProductWizard({
             >
               <option value="full">Pełna (PUT — nazwa, opisy, zdjęcia)</option>
               <option value="quick">Szybka (PATCH — cena, stan, VAT)</option>
+              <option value="metadata">Metadane (PUT — jednostka, kategoria, producent)</option>
             </select>
           </label>
         ) : null}
@@ -652,6 +718,26 @@ export function ProductWizard({
           className="rounded-full border border-blue-300 bg-blue-50 px-4 py-2 text-sm text-blue-900 disabled:opacity-60 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"
         >
           {eanLoading ? "Wczytywanie EAN z GS1…" : "Wczytaj EAN z pliku GS1"}
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void downloadProductEanTemplateXlsx([product])
+              .then((result) => {
+                setProduct(result.products[0] ?? product);
+                setEanMessage(
+                  result.assignedCount > 0
+                    ? `Wyeksportowano MojeGS1 i nadano ${result.assignedCount} GTIN z puli.`
+                    : "Wyeksportowano MojeGS1 (XLSX).",
+                );
+              })
+              .catch((error) => {
+                setEanMessage(error instanceof Error ? error.message : "Błąd eksportu EAN.");
+              })
+          }
+          className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
+        >
+          Eksportuj MojeGS1 (XLSX)
         </button>
         {!dryRun ? (
           <span className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">

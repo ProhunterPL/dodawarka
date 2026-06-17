@@ -8,6 +8,9 @@ const testFiles = [
   "batch.test.ts",
   "template.test.ts",
   "channel-metadata.test.ts",
+  "metadata-fix.test.ts",
+  "koszulker-parser.test.ts",
+  "ean-portable.test.ts",
 ];
 
 let exitCode = 0;

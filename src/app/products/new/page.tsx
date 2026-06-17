@@ -1,4 +1,4 @@
-import { ProductWizard } from "@/components/ProductWizard";
+import { NewProductClient } from "@/components/NewProductClient";
 import { buildProductFormFromRecord } from "@/lib/product/local-product";
 import {
   applyTemplateProduct,
@@ -39,9 +39,8 @@ export default async function NewProductPage({ searchParams }: NewProductPagePro
           Nowy produkt
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Dodaj produkt</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">{subtitle}</p>
       </div>
-      <ProductWizard initialProduct={initialProduct} />
+      <NewProductClient serverInitialProduct={initialProduct} subtitle={subtitle} />
     </main>
   );
 }

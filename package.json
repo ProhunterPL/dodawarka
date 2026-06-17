@@ -10,7 +10,8 @@
     "apilo:auth": "node scripts/apilo-auth.mjs",
     "apilo:test-import": "node scripts/test-apilo-import.mjs",
     "s3:setup": "node scripts/setup-s3-bucket.mjs",
-    "test": "node scripts/run-tests.mjs"
+    "test": "node scripts/run-tests.mjs",
+    "cleanup:hooks": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/cleanup-stuck-cursor-hooks.ps1"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1068.0",

@@ -29,6 +29,18 @@ export function SiteHeader() {
           >
             Batch CSV
           </Link>
+          <Link
+            href="/products/import"
+            className="hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            Import Koszulker
+          </Link>
+          <Link
+            href="/products/ean"
+            className="hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            EAN CSV
+          </Link>
         </nav>
       </div>
     </header>

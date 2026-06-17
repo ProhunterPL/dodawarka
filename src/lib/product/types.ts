@@ -40,7 +40,7 @@ export interface ChannelMetadataEntry {
 
 export type ChannelMetadataMap = Partial<Record<string, ChannelMetadataEntry>>;
 
-export type ProductUpdateScope = "full" | "quick";
+export type ProductUpdateScope = "full" | "quick" | "metadata";
 
 export interface ValidationIssue {
   field: string;

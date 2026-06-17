@@ -5,6 +5,10 @@ import type {
 } from "@/lib/apilo/types";
 import { collectProductSkus, findDuplicateSkus, parseApiloTax } from "@/lib/apilo/product-utils";
 import { hasChannelMetadataContent, getChannelMetadata } from "@/lib/product/channel-metadata";
+import {
+  applyMetadataFixes,
+  buildApiloProducerAttribute,
+} from "@/lib/product/metadata-fix";
 import { isS3Configured } from "@/lib/storage/s3-config";
 import type { ProductFormInput, ProductStatus, ValidationIssue, ValidationResult } from "./types";
 
@@ -22,7 +26,6 @@ export interface ValidateProductOptions {
 const ONEDRIVE_PATTERNS = [/1drv\.ms/i, /onedrive\.live\.com/i, /sharepoint\.com/i];
 const APILO_NAME_MAX = 120;
 const APILO_GROUP_MAX = 120;
-const DEFAULT_BRAND = "Incore Sports";
 
 function normalizeForApilo(value: string): string {
   return value
@@ -246,10 +249,7 @@ export function buildApiloPayload(input: ProductFormInput): ApiloWarehouseProduc
     categories: input.categoryIds,
     weight: input.weight,
     unit: normalizedUnit || "szt.",
-    attributes: {
-      Marka: DEFAULT_BRAND,
-      Producent: DEFAULT_BRAND,
-    },
+    attributes: buildApiloProducerAttribute(),
     description: input.description,
     shortDescription: input.shortDescription.slice(0, 256),
     images: Object.keys(images).length > 0 ? images : undefined,
@@ -329,6 +329,13 @@ export function buildApiloPutPayload(
   }
 
   return result;
+}
+
+export function buildApiloMetadataPutPayload(
+  input: ProductFormInput,
+  apiloIdsBySku: Record<string, number>,
+): ApiloWarehouseProductPutPayload[] {
+  return buildApiloPutPayload(applyMetadataFixes(input), apiloIdsBySku);
 }
 
 export function buildApiloPatchPayload(

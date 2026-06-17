@@ -32,7 +32,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">{record.groupName}</h1>
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Edytuj dane i wyślij zmiany do Apilo (PUT — pełna aktualizacja lub PATCH — cena/stan).
+          Edytuj dane i wyślij zmiany do Apilo (PUT pełna / PATCH szybka / PUT metadane).
         </p>
         {!canUpdate ? (
           <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">

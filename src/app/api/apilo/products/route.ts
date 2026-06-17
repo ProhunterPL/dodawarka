@@ -14,12 +14,14 @@ import {
   formatSkuList,
 } from "@/lib/apilo/product-utils";
 import {
+  buildApiloMetadataPutPayload,
   buildApiloPatchPayload,
   buildApiloPayload,
   buildApiloPutPayload,
   validateProductInput,
 } from "@/lib/product/validation";
 import type { LocalProductRecord, ProductFormInput, ProductUpdateScope } from "@/lib/product/types";
+import { applyMetadataFixes } from "@/lib/product/metadata-fix";
 import { isS3Configured } from "@/lib/storage/s3-config";
 import {
   appendImportLog,
@@ -320,7 +322,9 @@ export async function PATCH(request: Request) {
     const payload =
       updateScope === "quick"
         ? buildApiloPatchPayload({ ...body.product, apiloIdsBySku }, apiloIdsBySku)
-        : buildApiloPutPayload({ ...body.product, apiloIdsBySku }, apiloIdsBySku);
+        : updateScope === "metadata"
+          ? buildApiloMetadataPutPayload({ ...body.product, apiloIdsBySku }, apiloIdsBySku)
+          : buildApiloPutPayload({ ...body.product, apiloIdsBySku }, apiloIdsBySku);
 
     if (payload.length === 0) {
       return NextResponse.json(
@@ -365,7 +369,7 @@ export async function PATCH(request: Request) {
           : payload.length;
 
     const formSnapshot: ProductFormInput = {
-      ...body.product,
+      ...(updateScope === "metadata" ? applyMetadataFixes(body.product) : body.product),
       apiloIdsBySku,
     };
 
@@ -444,10 +448,11 @@ export async function PATCH(request: Request) {
 }
 
 type PutItem = ReturnType<typeof buildApiloPutPayload>[number];
+type MetadataPutItem = ReturnType<typeof buildApiloMetadataPutPayload>[number];
 type PatchItem = ReturnType<typeof buildApiloPatchPayload>[number];
 
 async function updateWithFallback(
-  payload: PutItem[] | PatchItem[],
+  payload: PutItem[] | MetadataPutItem[] | PatchItem[],
   updateScope: ProductUpdateScope,
   dryRun: boolean,
 ): Promise<{

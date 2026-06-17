@@ -101,11 +101,10 @@ describe("buildApiloPayload", () => {
     assert.equal(payload[0]?.tax, 23);
   });
 
-  it("sets unit and brand/producer attributes", () => {
+  it("sets unit and producer attribute", () => {
     const payload = buildApiloPayload(TEST_PRODUCT);
     assert.equal(payload[0]?.unit, "szt.");
-    assert.equal(payload[0]?.attributes?.Marka, "Incore Sports");
-    assert.equal(payload[0]?.attributes?.Producent, "Incore Sports");
+    assert.equal(payload[0]?.attributes?.["13"], "Incore Sports");
   });
 
   it("includes category ids", () => {

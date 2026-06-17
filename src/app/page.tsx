@@ -40,6 +40,12 @@ export default async function DashboardPage() {
           >
             Batch CSV
           </Link>
+          <Link
+            href="/products/import"
+            className="inline-flex items-center justify-center rounded-full border border-orange-300 px-5 py-2.5 text-sm font-medium text-orange-800 transition hover:bg-orange-50 dark:border-orange-800 dark:text-orange-200 dark:hover:bg-orange-950"
+          >
+            Import Koszulker
+          </Link>
         </div>
       </header>
 

@@ -143,12 +143,20 @@ export default async function ProductsCatalogPage() {
                     Duplikuj
                   </Link>
                   {canUpdateInApilo(product) ? (
-                    <Link
-                      href={`/products/${product.id}/edit`}
-                      className="rounded-full border border-zinc-300 px-3 py-1 text-xs dark:border-zinc-700"
-                    >
-                      Aktualizuj
-                    </Link>
+                    <>
+                      <Link
+                        href={`/products/${product.id}/edit`}
+                        className="rounded-full border border-zinc-300 px-3 py-1 text-xs dark:border-zinc-700"
+                      >
+                        Aktualizuj
+                      </Link>
+                      <Link
+                        href={`/products/${product.id}/edit#metadata-fix`}
+                        className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                      >
+                        Napraw metadane
+                      </Link>
+                    </>
                   ) : null}
                 </div>
               </li>
