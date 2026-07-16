@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
         hostname: "incoresports.koszulker.pl",
         pathname: "/images/**",
       },
+      {
+        protocol: "https",
+        hostname: "teamprinted.pl",
+        pathname: "/media/**",
+      },
     ],
   },
 };

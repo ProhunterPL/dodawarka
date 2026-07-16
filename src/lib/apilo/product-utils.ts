@@ -1,5 +1,81 @@
 import type { ProductFormInput } from "@/lib/product/types";
 
+export const APILO_NAME_MAX = 120;
+
+export function truncateApiloProductName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length <= APILO_NAME_MAX) {
+    return trimmed;
+  }
+  return trimmed.slice(0, APILO_NAME_MAX).trim();
+}
+
+export function isRepeatedApiloProductName(name: string): boolean {
+  const trimmed = name.trim();
+  if (trimmed.length < 40) {
+    return false;
+  }
+
+  const third = Math.floor(trimmed.length / 3);
+  if (third >= 20) {
+    const partA = trimmed.slice(0, third);
+    const partB = trimmed.slice(third, third * 2);
+    const partC = trimmed.slice(third * 2);
+    if (partA === partB && partB === partC) {
+      return true;
+    }
+  }
+
+  for (let partLength = 20; partLength <= trimmed.length / 2; partLength++) {
+    const part = trimmed.slice(0, partLength);
+    if (part.length < 20) {
+      continue;
+    }
+    const repeats = Math.round(trimmed.length / part.length);
+    if (repeats >= 2 && part.repeat(repeats).startsWith(trimmed)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/** Apilo psuje nazwę przy PUT z groupName — dla metadanych nie wysyłamy groupName. */
+export function resolveApiloProductNameForPut(
+  existingName: string | undefined,
+  preferredName: string,
+): string {
+  const existing = existingName?.trim() ?? "";
+  const preferred = preferredName.trim();
+
+  const preferredSafe =
+    preferred.length > 0
+      ? preferred.length <= APILO_NAME_MAX
+        ? preferred
+        : preferred.slice(0, APILO_NAME_MAX).trim()
+      : "";
+
+  if (
+    preferredSafe &&
+    (existing.length > APILO_NAME_MAX ||
+      isRepeatedApiloProductName(existing) ||
+      (existing.length > preferredSafe.length * 1.4 &&
+        existing.includes(preferredSafe)))
+  ) {
+    return preferredSafe;
+  }
+
+  if (existing.length > 0 && existing.length <= APILO_NAME_MAX) {
+    return existing;
+  }
+
+  if (preferredSafe) {
+    return preferredSafe;
+  }
+
+  return existing.slice(0, APILO_NAME_MAX).trim();
+}
+
 export function collectProductSkus(input: ProductFormInput): string[] {
   if (input.variants.length > 0) {
     return input.variants.map((variant) => variant.sku.trim()).filter(Boolean);
@@ -35,11 +111,11 @@ export function parseApiloTax(tax: string): number {
   const normalized = tax.replace(",", ".").trim();
   const value = Number(normalized);
 
-  if (!Number.isFinite(value)) {
+  if (!Number.isFinite(value) || value < 0) {
     throw new Error(`Niepoprawna stawka VAT: ${tax}`);
   }
 
-  return value;
+  return Math.round(value);
 }
 
 export function extractApiloProductIds(

@@ -26,7 +26,8 @@ export async function fetchKoszulkerHtml(url: string): Promise<string> {
       throw new Error(`HTTP ${response.status} przy pobieraniu ${url}`);
     }
 
-    return await response.text();
+    const buffer = await response.arrayBuffer();
+    return new TextDecoder("utf-8").decode(buffer);
   } finally {
     clearTimeout(timeout);
   }

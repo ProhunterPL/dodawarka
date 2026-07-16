@@ -143,6 +143,31 @@ export function buildGs1MojeGs1DataRows(products: ProductFormInput[]): Array<Arr
   return rows;
 }
 
+function writeGs1SheetWithDataRows(
+  workbook: XLSX.WorkBook,
+  headerRows: Array<Array<string | number>>,
+  dataRows: Array<Array<string | number>>,
+): Buffer {
+  const newSheet = XLSX.utils.aoa_to_sheet([...headerRows, ...dataRows]);
+
+  const gtinColumn = 2;
+  const skuColumn = 21;
+  for (let row = GS1_DATA_START_ROW; row < headerRows.length + dataRows.length; row += 1) {
+    const dataIndex = row - GS1_DATA_START_ROW;
+    const gtin = String(dataRows[dataIndex]?.[gtinColumn] ?? "");
+    const sku = String(dataRows[dataIndex]?.[skuColumn] ?? "");
+    if (gtin) {
+      writeStringCell(newSheet, row, gtinColumn, gtin);
+    }
+    if (sku) {
+      writeStringCell(newSheet, row, skuColumn, sku);
+    }
+  }
+
+  workbook.Sheets[GS1_MOJE_GS1_SHEET] = newSheet;
+  return Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+}
+
 export function exportProductsToGs1Xlsx(products: ProductFormInput[]): Buffer {
   const templatePath = getGs1ImportTemplatePath();
   const workbook = XLSX.read(readFileSync(templatePath), { type: "buffer" });
@@ -158,24 +183,29 @@ export function exportProductsToGs1Xlsx(products: ProductFormInput[]): Buffer {
   });
   const headerRows = existing.slice(0, GS1_DATA_START_ROW);
   const dataRows = buildGs1MojeGs1DataRows(products);
-  const newSheet = XLSX.utils.aoa_to_sheet([...headerRows, ...dataRows]);
+  return writeGs1SheetWithDataRows(workbook, headerRows, dataRows);
+}
 
-  const gtinColumn = 2;
-  const skuColumn = 21;
-  for (let row = GS1_DATA_START_ROW; row < headerRows.length + dataRows.length; row += 1) {
-    const gtin = String(dataRows[row - GS1_DATA_START_ROW]?.[gtinColumn] ?? "");
-    const sku = String(dataRows[row - GS1_DATA_START_ROW]?.[skuColumn] ?? "");
-    if (gtin) {
-      writeStringCell(newSheet, row, gtinColumn, gtin);
-    }
-    if (sku) {
-      writeStringCell(newSheet, row, skuColumn, sku);
-    }
+/** Dopisuje wiersze produktów do istniejącego katalogu MojeGS1 (bez kasowania EYR itd.). */
+export function appendProductsToGs1Xlsx(products: ProductFormInput[]): Buffer {
+  const templatePath = getGs1ImportTemplatePath();
+  const workbook = XLSX.read(readFileSync(templatePath), { type: "buffer" });
+  const sheet = workbook.Sheets[GS1_MOJE_GS1_SHEET];
+
+  if (!sheet) {
+    throw new Error(`Brak arkusza ${GS1_MOJE_GS1_SHEET} w szablonie GS1.`);
   }
 
-  workbook.Sheets[GS1_MOJE_GS1_SHEET] = newSheet;
-
-  return Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+  const existing = XLSX.utils.sheet_to_json<(string | number)[]>(sheet, {
+    header: 1,
+    defval: "",
+  });
+  const headerRows = existing.slice(0, GS1_DATA_START_ROW);
+  const existingData = existing
+    .slice(GS1_DATA_START_ROW)
+    .filter((row) => String(row[2] ?? "").trim() || String(row[1] ?? "").trim());
+  const dataRows = [...existingData, ...buildGs1MojeGs1DataRows(products)];
+  return writeGs1SheetWithDataRows(workbook, headerRows, dataRows);
 }
 
 export function normalizeGtin(value: unknown): string {

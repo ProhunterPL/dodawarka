@@ -13,8 +13,9 @@ import {
   formatApiloErrorDetails,
   formatSkuList,
 } from "@/lib/apilo/product-utils";
+import { runApiloMetadataUpdate, type ApiloMetadataUpdateResult } from "@/lib/apilo/metadata-update";
+import { buildApiloMetadataPreview } from "@/lib/apilo/metadata-payload";
 import {
-  buildApiloMetadataPutPayload,
   buildApiloPatchPayload,
   buildApiloPayload,
   buildApiloPutPayload,
@@ -183,11 +184,27 @@ export async function POST(request: Request) {
       apiloIdsBySku: variantApiloIds,
     };
 
+    let metadataNote = "";
+    try {
+      const metadataResult = await runApiloMetadataUpdate(
+        applyMetadataFixes(body.product),
+        variantApiloIds,
+        { dryRun: false },
+      );
+      if (!("dryRun" in metadataResult) && metadataResult.updatedProducts > 0) {
+        metadataNote = ` Metadane (jednostka/kategoria/producent) zaktualizowane dla ${metadataResult.updatedProducts} wariantów.`;
+      }
+    } catch (metadataError) {
+      metadataNote = ` Metadane nie zostały ustawione automatycznie: ${
+        metadataError instanceof Error ? metadataError.message : "błąd PUT"
+      }.`;
+    }
+
     await appendImportLog({
       action: "import",
       sku: skuLabel,
       success: true,
-      message: "Produkt utworzony w Apilo.",
+      message: `Produkt utworzony w Apilo.${metadataNote}`,
       apiloProductIds,
     });
 
@@ -206,13 +223,16 @@ export async function POST(request: Request) {
       products: "products" in result ? result.products : [],
       validation,
       channelNote:
-          fallbackUsed
+          (fallbackUsed
             ? "Produkt dodany do Apilo. Import zbiorczy wywoływał błąd API, więc warianty wysłano pojedynczo."
-            : "Produkt dodany do Apilo. Sprawdź/potwierdź synchronizację kanałów w panelu Apilo.",
+            : "Produkt dodany do Apilo. Sprawdź/potwierdź synchronizację kanałów w panelu Apilo.") +
+          metadataNote,
     });
   } catch (error) {
     const diagnostics = await buildVariantDiagnostics(productInput, error);
-    const status = isApiloApiError(error) ? error.status : 500;
+    const apiloStatus = isApiloApiError(error) ? error.status : undefined;
+    const status =
+      apiloStatus !== undefined && apiloStatus >= 400 ? apiloStatus : 500;
     const details = isApiloApiError(error) ? error.details : undefined;
     const detailMessage = formatApiloErrorDetails(details);
     const diagnosticsMessage = formatDiagnosticsMessage(diagnostics);
@@ -319,12 +339,84 @@ export async function PATCH(request: Request) {
       );
     }
 
+    const productWithIds = { ...body.product, apiloIdsBySku };
+
+    if (updateScope === "metadata") {
+      const metadataResult = await runApiloMetadataUpdate(
+        productWithIds,
+        apiloIdsBySku,
+        { dryRun },
+      );
+      const skuLabel = formatSkuList(body.product);
+      const apiloProductIds = Object.values(apiloIdsBySku);
+
+      if ("dryRun" in metadataResult && metadataResult.dryRun) {
+        await appendImportLog({
+          action: "update",
+          sku: skuLabel,
+          success: true,
+          message: "Dry-run aktualizacji metadanych (PUT + PATCH atrybutów).",
+        });
+
+        return NextResponse.json({
+          success: true,
+          dryRun: true,
+          updateScope,
+          payload: metadataResult.putPayload,
+          attributePatches: metadataResult.attributePatches,
+          metadataPreview: buildApiloMetadataPreview(productWithIds, apiloIdsBySku),
+          validation,
+        });
+      }
+
+      const applied = metadataResult as ApiloMetadataUpdateResult;
+
+      const formSnapshot: ProductFormInput = {
+        ...applyMetadataFixes(body.product),
+        apiloIdsBySku,
+      };
+
+      await appendImportLog({
+        action: "update",
+        sku: skuLabel,
+        success: true,
+        message: `Zaktualizowano metadane: ${applied.updatedProducts} produktów, ${applied.patchedAttributes} atrybutów (producent/czas dostawy).`,
+        apiloProductIds,
+      });
+
+      if (localProductId) {
+        await updateLocalProduct(localProductId, {
+          importStatus: "updated",
+          status: body.product.status,
+          formSnapshot,
+          variantApiloIds: apiloIdsBySku,
+          apiloProductIds,
+          errorMessage: undefined,
+        });
+      } else {
+        await saveLocalProduct(
+          buildLocalProductRecord(body.product, "updated", {
+            apiloProductIds,
+            variantApiloIds: apiloIdsBySku,
+            formSnapshot,
+          }),
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        dryRun: false,
+        updateScope,
+        updatedCount: applied.updatedProducts,
+        patchedAttributes: applied.patchedAttributes,
+        validation,
+      });
+    }
+
     const payload =
       updateScope === "quick"
-        ? buildApiloPatchPayload({ ...body.product, apiloIdsBySku }, apiloIdsBySku)
-        : updateScope === "metadata"
-          ? buildApiloMetadataPutPayload({ ...body.product, apiloIdsBySku }, apiloIdsBySku)
-          : buildApiloPutPayload({ ...body.product, apiloIdsBySku }, apiloIdsBySku);
+        ? buildApiloPatchPayload(productWithIds, apiloIdsBySku)
+        : buildApiloPutPayload(productWithIds, apiloIdsBySku);
 
     if (payload.length === 0) {
       return NextResponse.json(
@@ -369,7 +461,7 @@ export async function PATCH(request: Request) {
           : payload.length;
 
     const formSnapshot: ProductFormInput = {
-      ...(updateScope === "metadata" ? applyMetadataFixes(body.product) : body.product),
+      ...body.product,
       apiloIdsBySku,
     };
 
@@ -412,7 +504,10 @@ export async function PATCH(request: Request) {
         : `Produkt zaktualizowany w Apilo (${updateScope.toUpperCase()}).`,
     });
   } catch (error) {
-    const status = isApiloApiError(error) ? error.status : 500;
+    const apiloStatus = isApiloApiError(error) ? error.status : undefined;
+    // Nie przekazuj 204/304 do przeglądarki — pusta odpowiedź psuje response.json()
+    const status =
+      apiloStatus !== undefined && apiloStatus >= 400 ? apiloStatus : 500;
     const details = isApiloApiError(error) ? error.details : undefined;
     const detailMessage = formatApiloErrorDetails(details);
     const message = detailMessage
@@ -448,11 +543,10 @@ export async function PATCH(request: Request) {
 }
 
 type PutItem = ReturnType<typeof buildApiloPutPayload>[number];
-type MetadataPutItem = ReturnType<typeof buildApiloMetadataPutPayload>[number];
 type PatchItem = ReturnType<typeof buildApiloPatchPayload>[number];
 
 async function updateWithFallback(
-  payload: PutItem[] | MetadataPutItem[] | PatchItem[],
+  payload: PutItem[] | PatchItem[],
   updateScope: ProductUpdateScope,
   dryRun: boolean,
 ): Promise<{
@@ -481,7 +575,7 @@ async function updateWithFallback(
       if ("dryRun" in singleResult) {
         throw new Error("Otrzymano dry-run dla aktualizacji produkcyjnej.");
       }
-      updated += singleResult.updated ?? singleResult.changes ?? 1;
+      updated += singleResult?.updated ?? singleResult?.changes ?? 1;
     }
 
     return {

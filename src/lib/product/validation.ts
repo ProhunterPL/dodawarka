@@ -5,9 +5,10 @@ import type {
 } from "@/lib/apilo/types";
 import { collectProductSkus, findDuplicateSkus, parseApiloTax } from "@/lib/apilo/product-utils";
 import { hasChannelMetadataContent, getChannelMetadata } from "@/lib/product/channel-metadata";
+import { buildIndexedApiloAttributesForPut } from "@/lib/apilo/put-attributes";
 import {
   applyMetadataFixes,
-  buildApiloProducerAttribute,
+  DEFAULT_PRODUCT_UNIT,
 } from "@/lib/product/metadata-fix";
 import { isS3Configured } from "@/lib/storage/s3-config";
 import type { ProductFormInput, ProductStatus, ValidationIssue, ValidationResult } from "./types";
@@ -242,18 +243,19 @@ export function buildApiloPayload(input: ProductFormInput): ApiloWarehouseProduc
   );
 
   const normalizedUnit = input.unit.trim();
+  // CREATE (POST) nie toleruje tablicy `attributes` — Apilo zwraca LogicException.
+  // Atrybuty (opis/producent) ustawiamy po utworzeniu przez PUT metadanych.
+  // Nie wysyłamy `groupName` — Apilo skleja je z `name` (podwaja/potraja nazwę).
   const base = {
     priceWithTax: input.priceWithTax,
     tax: parseApiloTax(input.tax),
     status,
     categories: input.categoryIds,
     weight: input.weight,
-    unit: normalizedUnit || "szt.",
-    attributes: buildApiloProducerAttribute(),
+    unit: normalizedUnit || DEFAULT_PRODUCT_UNIT,
     description: input.description,
     shortDescription: input.shortDescription.slice(0, 256),
     images: Object.keys(images).length > 0 ? images : undefined,
-    groupName: truncate(normalizeForApilo(input.groupName), 80),
   };
 
   if (input.variants.length === 0) {
@@ -289,11 +291,6 @@ export function buildApiloPayload(input: ProductFormInput): ApiloWarehouseProduc
   }));
 }
 
-function formatApiloTaxString(tax: string): string {
-  const value = parseApiloTax(tax);
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
-}
-
 export function buildApiloPutPayload(
   input: ProductFormInput,
   apiloIdsBySku: Record<string, number>,
@@ -311,13 +308,15 @@ export function buildApiloPutPayload(
       id,
       sku: item.sku,
       name: item.name,
-      tax: formatApiloTaxString(input.tax),
+      tax: item.tax,
       status: item.status,
       quantity: item.quantity,
       priceWithTax: item.priceWithTax,
       originalCode: item.originalCode,
-      groupName: item.groupName,
-      attributes: item.attributes,
+      attributes: buildIndexedApiloAttributesForPut({
+        shortDescription: input.shortDescription,
+        description: input.description,
+      }),
       images: item.images,
       categories: item.categories,
       ean: item.ean,
@@ -329,13 +328,6 @@ export function buildApiloPutPayload(
   }
 
   return result;
-}
-
-export function buildApiloMetadataPutPayload(
-  input: ProductFormInput,
-  apiloIdsBySku: Record<string, number>,
-): ApiloWarehouseProductPutPayload[] {
-  return buildApiloPutPayload(applyMetadataFixes(input), apiloIdsBySku);
 }
 
 export function buildApiloPatchPayload(
@@ -356,10 +348,12 @@ export function buildApiloPatchPayload(
       sku: item.sku,
       quantity: item.quantity,
       priceWithTax: item.priceWithTax,
-      tax: formatApiloTaxString(input.tax),
+      tax: item.tax,
       status: item.status,
     });
   }
 
   return result;
 }
+
+export { buildApiloMetadataPutPayload } from "@/lib/apilo/metadata-payload";

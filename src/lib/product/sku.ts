@@ -19,9 +19,9 @@ function normalize(input: string): string {
 function codeForTypeAndGender(text: string): string {
   const n = normalize(text);
   const type = /\b(t-shirt|tshirt|koszulka)\b/.test(n) ? "T" : "P";
-  const gender = /\b(meski|męski|male|men)\b/.test(n)
+  const gender = /\b(meski|meska|męski|męska|male|men)\b/.test(n)
     ? "M"
-    : /\b(damski|zenski|żeński|female|women)\b/.test(n)
+    : /\b(damski|damska|zenski|zenska|żeński|żeńska|female|women)\b/.test(n)
       ? "D"
       : "U";
   const color = COLOR_CODES.find((item) => item.pattern.test(n))?.code ?? "X";

@@ -14,6 +14,10 @@ import type {
   ApiloWarehouseProductPatchPayload,
   ApiloWarehouseProductPayload,
   ApiloWarehouseProductPutPayload,
+  ApiloWarehouseProductAttributesResponse,
+  ApiloWarehouseProductAttributesPatchPayload,
+  ApiloWarehouseProductAttributesPatchResponse,
+  ApiloWarehouseProductMediaResponse,
 } from "./types";
 
 type GrantType = "authorization_code" | "refresh_token";
@@ -133,28 +137,36 @@ async function apiloFetch<T>(
       },
     });
 
-    if (!retry.ok) {
-      const details = await safeJson(retry);
-      throw createApiError("Błąd API Apilo po odświeżeniu tokenu", retry.status, details);
-    }
+    return parseApiloResponse<T>(retry, "Błąd API Apilo po odświeżeniu tokenu");
+  }
 
-    if (retry.status === 204) {
-      return undefined as T;
-    }
+  return parseApiloResponse<T>(response, "Błąd API Apilo");
+}
 
-    return (await retry.json()) as T;
+async function parseApiloResponse<T>(
+  response: Response,
+  errorMessage: string,
+): Promise<T> {
+  // 204/304 — brak treści (PUT bez zmian zwraca 304)
+  if (response.status === 204 || response.status === 304) {
+    return undefined as T;
   }
 
   if (!response.ok) {
     const details = await safeJson(response);
-    throw createApiError("Błąd API Apilo", response.status, details);
+    throw createApiError(errorMessage, response.status, details);
   }
 
-  if (response.status === 204) {
+  const text = await response.text();
+  if (!text.trim()) {
     return undefined as T;
   }
 
-  return (await response.json()) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw createApiError(errorMessage, response.status, text);
+  }
 }
 
 export async function testConnection(): Promise<{ ok: boolean; content?: string }> {
@@ -223,6 +235,49 @@ export async function getWarehouseProduct(
 ): Promise<ApiloWarehouseProductDetail> {
   return apiloFetch<ApiloWarehouseProductDetail>(
     `/rest/api/warehouse/product/${id}/`,
+  );
+}
+
+export async function getWarehouseProductAttributes(
+  productId: number,
+): Promise<ApiloWarehouseProductAttributesResponse["attributes"]> {
+  const response = await apiloFetch<ApiloWarehouseProductAttributesResponse>(
+    `/rest/api/warehouse/product/attributes/?productId[]=${productId}`,
+  );
+  return response?.attributes ?? [];
+}
+
+export async function getWarehouseProductMedia(
+  productId: number,
+): Promise<ApiloWarehouseProductMediaResponse["media"]> {
+  const response = await apiloFetch<ApiloWarehouseProductMediaResponse>(
+    `/rest/api/warehouse/product/media/?productIds=${productId}`,
+  );
+  return response?.media ?? [];
+}
+
+export async function patchWarehouseProductAttributes(
+  payload: ApiloWarehouseProductAttributesPatchPayload,
+  options?: { dryRun?: boolean },
+): Promise<
+  | ApiloWarehouseProductAttributesPatchResponse
+  | { dryRun: true; payload: ApiloWarehouseProductAttributesPatchPayload }
+> {
+  const dryRun =
+    options?.dryRun !== undefined
+      ? options.dryRun
+      : getApiloConfig().dryRun;
+
+  if (dryRun) {
+    return { dryRun: true, payload };
+  }
+
+  return apiloFetch<ApiloWarehouseProductAttributesPatchResponse>(
+    "/rest/api/warehouse/product/attributes/",
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
   );
 }
 

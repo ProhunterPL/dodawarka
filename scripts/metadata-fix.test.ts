@@ -6,7 +6,7 @@ import {
   normalizeMensShirtsCategoryIds,
 } from "../src/lib/product/metadata-fix";
 import { TEST_PRODUCT } from "../src/lib/product/test-product";
-import { buildApiloMetadataPutPayload } from "../src/lib/product/validation";
+import { buildApiloMetadataPutPayload } from "../src/lib/apilo/metadata-payload";
 
 describe("normalizeMensShirtsCategoryIds", () => {
   it("upgrades bare Odzież (25) to full mens shirts path", () => {
@@ -29,6 +29,20 @@ describe("applyMetadataFixes", () => {
     assert.equal(fixed.unit, "szt.");
     assert.deepEqual(fixed.categoryIds, [...MENS_SHIRTS_CATEGORY_IDS]);
   });
+
+  it("upgrades bare Odzież (25) to womens shirts path for damskie products", () => {
+    const fixed = applyMetadataFixes({
+      ...TEST_PRODUCT,
+      groupName: "Koszulka damska T-shirt EARN YOUR REPS czarna",
+      name: "Koszulka damska T-shirt EARN YOUR REPS czarna S",
+      categoryIds: [25],
+      categoryLabel: "Odzież / Dla niej",
+    });
+
+    assert.equal(fixed.unit, "szt.");
+    assert.deepEqual(fixed.categoryIds, [25, 46, 52]);
+    assert.match(fixed.categoryLabel, /Koszulki damskie/i);
+  });
 });
 
 describe("buildApiloMetadataPutPayload", () => {
@@ -39,7 +53,10 @@ describe("buildApiloMetadataPutPayload", () => {
 
     assert.equal(payload.length, 1);
     assert.equal(payload[0]?.unit, "szt.");
-    assert.equal(payload[0]?.attributes?.["13"], "Incore Sports");
+    const attributes = payload[0]?.attributes;
+    assert.ok(Array.isArray(attributes));
+    assert.equal(attributes?.[3], "Incore Sports");
     assert.deepEqual(payload[0]?.categories, [...MENS_SHIRTS_CATEGORY_IDS]);
+    assert.equal(payload[0]?.tax, 23);
   });
 });

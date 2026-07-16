@@ -5,6 +5,7 @@ import {
   findDuplicateSkus,
   formatApiloErrorDetails,
   parseApiloTax,
+  resolveApiloProductNameForPut,
 } from "../src/lib/apilo/product-utils";
 import {
   buildApiloPatchPayload,
@@ -25,13 +26,14 @@ describe("parseApiloTax", () => {
 });
 
 describe("buildApiloPutPayload", () => {
-  it("includes apilo id and string tax for PUT", () => {
+  it("includes apilo id and integer tax for PUT", () => {
     const payload = buildApiloPutPayload(TEST_PRODUCT, {
       "TMCS-EYR-IS-XS": 1001,
     });
     assert.equal(payload.length, 1);
     assert.equal(payload[0]?.id, 1001);
-    assert.equal(payload[0]?.tax, "23");
+    assert.equal(typeof payload[0]?.tax, "number");
+    assert.equal(payload[0]?.tax, 23);
     assert.equal(payload[0]?.sku, "TMCS-EYR-IS-XS");
   });
 });
@@ -45,6 +47,8 @@ describe("buildApiloPatchPayload", () => {
     assert.ok(item);
     assert.equal(item?.id, 2002);
     assert.equal(item?.quantity, 10);
+    assert.equal(typeof item?.tax, "number");
+    assert.equal(item?.tax, 23);
     assert.equal("name" in (item ?? {}), false);
   });
 });
@@ -94,6 +98,29 @@ describe("validateProductInput", () => {
   });
 });
 
+describe("resolveApiloProductNameForPut", () => {
+  it("keeps valid existing name", () => {
+    const name = resolveApiloProductNameForPut(
+      "Koszulka EYR czarny M",
+      "Koszulka EYR czarny M",
+    );
+    assert.equal(name, "Koszulka EYR czarny M");
+  });
+
+  it("uses preferred name when existing is too long", () => {
+    const corrupted = "X".repeat(200);
+    const preferred = "Koszulka T-shirt bawełniana EARN YOUR REPS Incore Sports czarny M";
+    assert.equal(resolveApiloProductNameForPut(corrupted, preferred), preferred);
+  });
+
+  it("uses preferred name when existing is tripled", () => {
+    const preferred =
+      "Koszulka T-shirt bawełniana EARN YOUR REPS Incore Sports czarny XL";
+    const corrupted = preferred.repeat(3);
+    assert.equal(resolveApiloProductNameForPut(corrupted, preferred), preferred);
+  });
+});
+
 describe("buildApiloPayload", () => {
   it("sends tax as number", () => {
     const payload = buildApiloPayload(TEST_PRODUCT);
@@ -101,10 +128,16 @@ describe("buildApiloPayload", () => {
     assert.equal(payload[0]?.tax, 23);
   });
 
-  it("sets unit and producer attribute", () => {
+  it("sets unit and omits attributes/groupName on CREATE payload", () => {
     const payload = buildApiloPayload(TEST_PRODUCT);
     assert.equal(payload[0]?.unit, "szt.");
-    assert.equal(payload[0]?.attributes?.["13"], "Incore Sports");
+    assert.equal(payload[0]?.attributes, undefined);
+    assert.equal(payload[0]?.groupName, undefined);
+    assert.match(payload[0]?.name ?? "", /\bXS$/);
+    assert.equal(
+      (payload[0]?.name.match(/EARN YOUR REPS/gi) ?? []).length,
+      1,
+    );
   });
 
   it("includes category ids", () => {

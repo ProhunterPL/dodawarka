@@ -1,5 +1,10 @@
-import { generateSkus } from "@/lib/product/sku";
-import { MENS_SHIRTS_CATEGORY_LABEL } from "@/lib/product/metadata-fix";
+import { generateSkuPrefix, generateSkus } from "@/lib/product/sku";
+import {
+  MENS_SHIRTS_CATEGORY_IDS,
+  MENS_SHIRTS_CATEGORY_LABEL,
+  WOMENS_SHIRTS_CATEGORY_IDS,
+  WOMENS_SHIRTS_CATEGORY_LABEL,
+} from "@/lib/product/metadata-fix";
 import type { ProductFormInput } from "@/lib/product/types";
 import type { KoszulkerProductDetail } from "./types";
 
@@ -32,13 +37,13 @@ function defaultCategory(detail: KoszulkerProductDetail): {
 } {
   if (detail.gender === "kobieta") {
     return {
-      categoryIds: [25],
-      categoryLabel: "Odzież / Dla niej (do weryfikacji w Apilo)",
+      categoryIds: [...WOMENS_SHIRTS_CATEGORY_IDS],
+      categoryLabel: WOMENS_SHIRTS_CATEGORY_LABEL,
     };
   }
 
   return {
-    categoryIds: [25],
+    categoryIds: [...MENS_SHIRTS_CATEGORY_IDS],
     categoryLabel: MENS_SHIRTS_CATEGORY_LABEL,
   };
 }
@@ -105,5 +110,17 @@ export function koszulkerDetailToProductForm(
     },
   };
 
-  return generateSkus(product);
+  const withSkus = generateSkus(product);
+  // Unikalne SKU: wiele projektów Koszulker ma tę samą nazwę/kolor.
+  const idTag = `K${detail.productId}`;
+  return {
+    ...withSkus,
+    sku: withSkus.variants[0]
+      ? `${generateSkuPrefix(product)}-${idTag}-${withSkus.variants[0].size.toUpperCase()}`
+      : `${generateSkuPrefix(product)}-${idTag}`,
+    variants: withSkus.variants.map((variant) => ({
+      ...variant,
+      sku: `${generateSkuPrefix(product)}-${idTag}-${variant.size.toUpperCase()}`,
+    })),
+  };
 }

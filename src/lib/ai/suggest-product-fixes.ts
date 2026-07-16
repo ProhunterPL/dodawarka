@@ -14,6 +14,7 @@ Zasady:
 - Odpowiadaj po polsku w polu summary i reason.
 - Zwracaj TYLKO poprawny JSON zgodny ze schematem.
 - Nie wymyślaj EAN/SKU — poprawiaj tylko opisy, kategorie, nazwy i pola tekstowe.
+- tax (VAT) to liczba całkowita procentowa dla Apilo, np. 23 dla 23% — nigdy nie ustawiaj 0, jeśli produkt ma standardowy VAT.
 - shortDescription max 256 znaków.
 - description powinien być kompletny, zgodny z charakterem produktu sportowego Incore Sports.
 - Dla categoryIds wybierz najlepsze dopasowanie z podanej listy kategorii Apilo (jako tablica liczb).
@@ -179,6 +180,13 @@ function normalizeSuggestionValue(
   if (field === "quantity" || field === "weight") {
     const asNumber = Number(value);
     return Number.isFinite(asNumber) ? asNumber : undefined;
+  }
+
+  if (field === "tax") {
+    const asNumber = Number(String(value).replace(",", "."));
+    return Number.isFinite(asNumber) && asNumber >= 0
+      ? String(Math.round(asNumber))
+      : undefined;
   }
 
   return typeof value === "string" || typeof value === "number"

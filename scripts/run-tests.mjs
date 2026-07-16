@@ -9,7 +9,12 @@ const testFiles = [
   "template.test.ts",
   "channel-metadata.test.ts",
   "metadata-fix.test.ts",
+  "put-attributes.test.ts",
+  "patch-product-attributes.test.ts",
+  "product-media.test.ts",
   "koszulker-parser.test.ts",
+  "teamprinted-parser.test.ts",
+  "sku.test.ts",
   "ean-portable.test.ts",
 ];
 

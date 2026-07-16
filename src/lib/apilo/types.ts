@@ -27,7 +27,7 @@ export interface ApiloWarehouseProductPayload {
   tax: number;
   status: 0 | 1;
   groupName?: string | null;
-  attributes?: Record<string, string | number>;
+  attributes?: ApiloWarehouseProductAttributesPayload;
   images?: Record<string, string>;
   categories?: number[];
   ean?: string;
@@ -36,6 +36,11 @@ export interface ApiloWarehouseProductPayload {
   description?: string;
   shortDescription?: string;
 }
+
+/** PUT/POST: Apilo oczekuje tablicy wartości wg kolejności typów atrybutów (1, 4, 10, 13). */
+export type ApiloWarehouseProductAttributesPayload =
+  | string[]
+  | Record<string, string | number>;
 
 export interface ApiloCreateProductsResponse {
   products:
@@ -48,13 +53,13 @@ export interface ApiloWarehouseProductPutPayload {
   id: number;
   sku: string;
   name: string;
-  tax: string;
+  tax: number;
   status: 0 | 1;
   quantity: number;
   priceWithTax: string;
   originalCode?: string;
   groupName?: string | null;
-  attributes?: Record<string, string | number>;
+  attributes?: ApiloWarehouseProductAttributesPayload;
   images?: Record<string, string>;
   categories?: number[];
   ean?: string;
@@ -62,7 +67,46 @@ export interface ApiloWarehouseProductPutPayload {
   unit?: string;
   description?: string;
   shortDescription?: string;
-  location?: string | null;
+}
+
+export interface ApiloWarehouseProductAttribute {
+  id: number;
+  productId: number;
+  attributeTypeId: number;
+  type: number;
+  values: Array<{ id?: number; value: string }>;
+}
+
+export interface ApiloWarehouseProductAttributesResponse {
+  attributes: ApiloWarehouseProductAttribute[];
+  totalCount: number;
+}
+
+export interface ApiloWarehouseProductAttributesPatchPayload {
+  attributes: Array<{
+    id: number;
+    productId: number;
+    type: number;
+    values: Array<{ value: string }>;
+  }>;
+}
+
+export interface ApiloWarehouseProductAttributesPatchResponse {
+  attributes: ApiloWarehouseProductAttribute[];
+}
+
+export interface ApiloWarehouseProductMedia {
+  id: number;
+  isMain: number;
+  productId: number | null;
+  uuid: string;
+  extension: string;
+  link: string;
+}
+
+export interface ApiloWarehouseProductMediaResponse {
+  media: ApiloWarehouseProductMedia[];
+  totalCount: number;
 }
 
 /** Częściowa aktualizacja — PATCH /rest/api/warehouse/product/ */
@@ -72,7 +116,7 @@ export interface ApiloWarehouseProductPatchPayload {
   sku?: string | null;
   quantity?: number;
   priceWithTax?: string;
-  tax?: string;
+  tax?: number;
   status?: 0 | 1 | 8 | null;
 }
 
@@ -88,7 +132,7 @@ export interface ApiloWarehouseProductDetail {
   groupName?: string;
   quantity: number;
   priceWithTax: number | string;
-  tax: string;
+  tax: number | string;
   status: number;
   ean?: string;
   weight?: number;
@@ -97,6 +141,8 @@ export interface ApiloWarehouseProductDetail {
   shortDescription?: string;
   categories?: number[];
   originalCode?: string;
+  location?: string | null;
+  productGroupId?: number;
 }
 
 export interface ApiloApiError {

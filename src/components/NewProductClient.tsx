@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ProductWizard } from "@/components/ProductWizard";
 import { KOSZULKER_IMPORT_STORAGE_KEY } from "@/components/KoszulkerImportPanel";
+import { TEAMPRINTED_IMPORT_STORAGE_KEY } from "@/components/TeamPrintedImportPanel";
 import type { ProductFormInput } from "@/lib/product/types";
 
 interface NewProductClientProps {
@@ -27,22 +28,31 @@ export function NewProductClient({
     }
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get("source") !== "koszulker") {
+    const source = params.get("source");
+    const storageKey =
+      source === "koszulker"
+        ? KOSZULKER_IMPORT_STORAGE_KEY
+        : source === "teamprinted"
+          ? TEAMPRINTED_IMPORT_STORAGE_KEY
+          : null;
+
+    if (!storageKey) {
       return;
     }
 
-    const raw = sessionStorage.getItem(KOSZULKER_IMPORT_STORAGE_KEY);
+    const raw = sessionStorage.getItem(storageKey);
     if (!raw) {
       return;
     }
 
     try {
       const imported = JSON.parse(raw) as ProductFormInput;
+      const label = source === "teamprinted" ? "TeamPrinted" : "Koszulker";
       setInitialProduct(imported);
       setSubtitle(
-        `Zaimportowano z Koszulker: ${imported.groupName}. Sprawdź kategorię, EAN i zdjęcia przed wysyłką.`,
+        `Zaimportowano z ${label}: ${imported.groupName}. Sprawdź kategorię, EAN i zdjęcia przed wysyłką.`,
       );
-      sessionStorage.removeItem(KOSZULKER_IMPORT_STORAGE_KEY);
+      sessionStorage.removeItem(storageKey);
     } catch {
       // ignore invalid session payload
     }

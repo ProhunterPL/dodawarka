@@ -13,11 +13,18 @@ import { APILO_NEXT_STEPS } from "@/lib/product/channels";
 import { generateSkus } from "@/lib/product/sku";
 import { stripProductIdentifiers } from "@/lib/product/template";
 import { collectProductSkus } from "@/lib/apilo/product-utils";
-import { DEFAULT_VARIANT_SIZES, TEST_PRODUCT } from "@/lib/product/test-product";
+import {
+  DEFAULT_VARIANT_SIZES,
+  TEST_PRODUCT,
+  TEST_PRODUCT_WOMEN,
+} from "@/lib/product/test-product";
 import type { ProductFormInput, ProductUpdateScope, ProductVariantInput, ValidationIssue } from "@/lib/product/types";
 import { applyMetadataFixes, describeMetadataFix } from "@/lib/product/metadata-fix";
 import {
+  buildApiloMetadataPreview,
   buildApiloMetadataPutPayload,
+} from "@/lib/apilo/metadata-payload";
+import {
   buildApiloPatchPayload,
   buildApiloPayload,
   buildApiloPutPayload,
@@ -30,6 +37,7 @@ interface ImportResult {
   success: boolean;
   dryRun?: boolean;
   payload?: unknown[];
+  metadataPreview?: import("@/lib/apilo/metadata-payload").ApiloMetadataPreviewItem[];
   apiloProductIds?: number[];
   updateScope?: ProductUpdateScope;
   updatedCount?: number;
@@ -142,7 +150,13 @@ export function ProductWizard({
         return buildApiloPatchPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
       }
       if (updateScope === "metadata") {
-        return buildApiloMetadataPutPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
+        return {
+          zmienianeMetadane: buildApiloMetadataPreview({ ...product, apiloIdsBySku }, apiloIdsBySku),
+          pelnyPutDoApilo: buildApiloMetadataPutPayload(
+            { ...product, apiloIdsBySku },
+            apiloIdsBySku,
+          ),
+        };
       }
       return buildApiloPutPayload({ ...product, apiloIdsBySku }, apiloIdsBySku);
     }
@@ -306,7 +320,10 @@ export function ProductWizard({
             : {}),
         }),
       });
-      const data = (await response.json()) as ImportResult;
+      const raw = await response.text();
+      const data = (
+        raw.trim() ? JSON.parse(raw) : { success: false, message: `HTTP ${response.status}` }
+      ) as ImportResult;
       setResult(data);
       if (data.success && scope === "metadata") {
         setProduct((current) => applyMetadataFixes(current));
@@ -516,6 +533,17 @@ export function ProductWizard({
           ) : null}
         </section>
 
+        {result.metadataPreview?.length ? (
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-6 dark:border-emerald-900 dark:bg-emerald-950/30">
+            <h3 className="font-medium text-emerald-950 dark:text-emerald-100">
+              Zmieniane metadane (podsumowanie)
+            </h3>
+            <pre className="mt-3 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-sm text-zinc-100">
+              {JSON.stringify(result.metadataPreview, null, 2)}
+            </pre>
+          </section>
+        ) : null}
+
         {result.payload ? (
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
             <h3 className="font-medium">Payload (dry-run)</h3>
@@ -601,8 +629,11 @@ export function ProductWizard({
             Napraw metadane w Apilo
           </h3>
           <p className="mt-1 text-sm text-emerald-900/80 dark:text-emerald-200/80">
-            Wyśle PUT dla wszystkich wariantów: jednostka, kategoria i producent (atrybut 13).
-            Opisy, ceny i zdjęcia pozostają bez zmian.
+            Wyśle PUT dla wszystkich wariantów: jednostka (<code>unit</code>, np.{" "}
+            <code>szt.</code>), kategorie (<code>categories</code>) i producent (
+            <code>PATCH /product/attributes/</code>, atrybut <code>13</code>). Opisy, ceny i
+            pobrane z Apilo i nie zostaną nadpisane (w tym zdjęcia). Pole{" "}
+            <code>groupName</code> jest pomijane — Apilo błędnie skleja je z nazwą przy PUT.
           </p>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-emerald-900 dark:text-emerald-100">
             {describeMetadataFix(product).map((line) => (
@@ -641,13 +672,22 @@ export function ProductWizard({
       ) : null}
       <div className="flex flex-wrap gap-3">
         {!isUpdateMode ? (
-          <button
-            type="button"
-            onClick={() => setProduct(TEST_PRODUCT)}
-            className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
-          >
-            Wczytaj produkt testowy
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => setProduct(TEST_PRODUCT)}
+              className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
+            >
+              Wczytaj EYR męskie
+            </button>
+            <button
+              type="button"
+              onClick={() => setProduct(TEST_PRODUCT_WOMEN)}
+              className="rounded-full border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
+            >
+              Wczytaj EYR damskie
+            </button>
+          </>
         ) : null}
         <button
           type="button"
@@ -707,7 +747,7 @@ export function ProductWizard({
             >
               <option value="full">Pełna (PUT — nazwa, opisy, zdjęcia)</option>
               <option value="quick">Szybka (PATCH — cena, stan, VAT)</option>
-              <option value="metadata">Metadane (PUT — jednostka, kategoria, producent)</option>
+              <option value="metadata">Metadane (PUT + PATCH — jednostka, kategoria, producent)</option>
             </select>
           </label>
         ) : null}
